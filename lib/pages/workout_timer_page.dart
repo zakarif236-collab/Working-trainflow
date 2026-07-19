@@ -560,6 +560,11 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         } else if (_hapticCueEnabled) {
           await HapticFeedback.selectionClick();
         }
+        if (remaining == 1) {
+          await _cueService.playCountdownFinalBeep();
+        } else {
+          await _cueService.playCountdownBeep();
+        }
         try {
           await _cueService.speakCount(remaining, shouldSpeak: canSpeak);
         } on CueServiceException catch (e) {
