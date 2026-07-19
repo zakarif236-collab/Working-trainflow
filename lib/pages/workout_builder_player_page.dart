@@ -813,9 +813,9 @@ class _ExerciseHeroCard extends StatelessWidget {
       ),
       child: Center(
         child: Icon(
-          isRestPhase ? Icons.self_improvement_rounded : Icons.fitness_center_rounded,
-          color: Colors.white.withValues(alpha: 0.12),
-          size: 80,
+          Icons.self_improvement_rounded,
+          color: Colors.white.withValues(alpha: 0.2),
+          size: 64,
         ),
       ),
     );
@@ -844,9 +844,9 @@ class _TimerOverlay extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
