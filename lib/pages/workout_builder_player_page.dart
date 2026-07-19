@@ -932,3 +932,209 @@ class _TimerOverlay extends StatelessWidget {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }
+
+class _InfoColumn extends StatelessWidget {
+  const _InfoColumn({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: accent, size: 20),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.nextLabel,
+    required this.nextDuration,
+    required this.remainingSeconds,
+  });
+
+  final String nextLabel;
+  final int nextDuration;
+  final int remainingSeconds;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black26, blurRadius: 16, offset: Offset(0, 4)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _InfoColumn(
+              icon: Icons.local_fire_department_rounded,
+              label: 'Next',
+              value: '$nextLabel (${nextDuration}s)',
+              accent: const Color(0xFFFF8A1E),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: Colors.white.withValues(alpha: 0.1),
+          ),
+          Expanded(
+            child: _InfoColumn(
+              icon: Icons.timer_rounded,
+              label: 'Remaining',
+              value: '$remainingSeconds seconds',
+              accent: const Color(0xFF60A5FA),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ControlBar extends StatelessWidget {
+  const _ControlBar({
+    required this.running,
+    required this.complete,
+    required this.palette,
+    required this.onStartPause,
+    required this.onReset,
+    required this.onSkip,
+  });
+
+  final bool running;
+  final bool complete;
+  final List<Color> palette;
+  final VoidCallback onStartPause;
+  final VoidCallback onReset;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [palette[0], palette[1]]),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.first.withValues(alpha: 0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: FilledButton.icon(
+              onPressed: onStartPause,
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                shadowColor: Colors.transparent,
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              icon: Icon(running ? Icons.pause_rounded : Icons.play_arrow_rounded),
+              label: Text(running ? 'Pause' : complete ? 'Restart' : 'Start'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: onSkip,
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withValues(alpha: 0.06),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  icon: const Icon(Icons.skip_next_rounded, size: 18),
+                  label: const Text('Skip'),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: onReset,
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withValues(alpha: 0.06),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  icon: const Icon(Icons.replay_rounded, size: 18),
+                  label: const Text('Reset'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
