@@ -945,3 +945,118 @@ class _RestPhaseMessageCard extends StatelessWidget {
     );
   }
 }
+
+class _ExerciseHeroCard extends StatelessWidget {
+  const _ExerciseHeroCard({
+    required this.mediaPath,
+    required this.remainingSeconds,
+    required this.phaseLabel,
+    required this.isRestPhase,
+    required this.palette,
+    required this.phaseBadge,
+  });
+
+  final String mediaPath;
+  final int remainingSeconds;
+  final String phaseLabel;
+  final bool isRestPhase;
+  final List<Color> palette;
+  final Widget phaseBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMedia = !isRestPhase && mediaPath.trim().isNotEmpty;
+
+    if (!hasMedia && !isRestPhase) {
+      return CircularCountdown(
+        progress: 0,
+        seconds: remainingSeconds,
+        phaseLabel: phaseLabel,
+        subtitle: '${remainingSeconds}s',
+        gradient: palette,
+      );
+    }
+
+    return SizedBox(
+      height: 280,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (hasMedia)
+            Image.file(
+              File(mediaPath.trim()),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _buildGradientBackground(),
+            )
+          else
+            _buildGradientBackground(),
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black54],
+                stops: [0.4, 1.0],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            right: 12,
+            child: phaseBadge,
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${remainingSeconds}s',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 48,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    shadows: [
+                      Shadow(color: Colors.black87, blurRadius: 12),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  phaseLabel,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGradientBackground() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [palette[0], const Color(0xFF0D121C), palette[1]],
+          stops: const [0.0, 0.45, 1.0],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.self_improvement_rounded,
+          color: Colors.white.withValues(alpha: 0.2),
+          size: 64,
+        ),
+      ),
+    );
+  }
+}
