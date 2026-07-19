@@ -35,11 +35,9 @@ class WorkoutBuilderPlayerPage extends StatefulWidget {
   State<WorkoutBuilderPlayerPage> createState() => _WorkoutBuilderPlayerPageState();
 }
 
-class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
-    with SingleTickerProviderStateMixin {
+class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   final CueService _cueService = CueService();
   final SettingsService _settingsService = SettingsService();
-  late final AnimationController _pulseController;
 
   WorkoutBuilderRoutine? _routine;
   List<_BuilderPhase> _timeline = const [];
@@ -59,12 +57,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-      lowerBound: 0.97,
-      upperBound: 1.03,
-    );
     _initializeCueSettings();
   }
 
@@ -111,7 +103,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   @override
   void dispose() {
     _ticker?.cancel();
-    _pulseController.dispose();
     if (_isComplete || !_hasProgressToResume) {
       unawaited(_settingsService.clearWorkoutBuilderResumeSession());
     } else {
@@ -359,7 +350,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     setState(() {
       _isRunning = true;
     });
-    _pulseController.repeat(reverse: true);
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isRunning) {
@@ -386,15 +376,11 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     setState(() {
       _isRunning = false;
     });
-    _pulseController.stop();
-    _pulseController.value = 1;
     unawaited(_persistResumeSnapshot());
   }
 
   void _stopAndReset() {
     _ticker?.cancel();
-    _pulseController.stop();
-    _pulseController.value = 1;
     setState(() {
       _isRunning = false;
       _phaseIndex = 0;
