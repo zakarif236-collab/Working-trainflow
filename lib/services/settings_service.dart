@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:my_app/models/workout_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 const int _kMaxWorkoutSets = 50;
 
@@ -38,6 +39,7 @@ class WorkoutInsights {
   const WorkoutInsights({
     required this.displayName,
     required this.profileImagePath,
+    required this.bio,
     required this.totalWorkouts,
     required this.totalSeconds,
     required this.currentStreakDays,
@@ -47,6 +49,7 @@ class WorkoutInsights {
 
   final String displayName;
   final String profileImagePath;
+  final String bio;
   final int totalWorkouts;
   final int totalSeconds;
   final int currentStreakDays;
@@ -56,6 +59,7 @@ class WorkoutInsights {
   static const WorkoutInsights defaults = WorkoutInsights(
     displayName: 'Athlete',
     profileImagePath: '',
+    bio: '',
     totalWorkouts: 0,
     totalSeconds: 0,
     currentStreakDays: 0,
@@ -443,6 +447,7 @@ class SettingsService {
         creatorId: 'unknown',
         username: 'Creator',
         profileImagePath: '',
+        bio: '',
         totalPublished: 0,
         followers: 0,
         totalDownloads: 0,
@@ -488,6 +493,9 @@ class SettingsService {
       creatorId: creatorId,
       username: username,
       profileImagePath: profileImagePath,
+      bio: creatorId == _kLocalCreatorId
+          ? (prefs.getString(_kBio) ?? '')
+          : '',
       totalPublished: totalPublished,
       followers: followers,
       totalDownloads: totalDownloads,
@@ -696,6 +704,7 @@ class SettingsService {
     return WorkoutInsights(
       displayName: prefs.getString(_kDisplayName) ?? WorkoutInsights.defaults.displayName,
       profileImagePath: prefs.getString(_kProfileImagePath) ?? WorkoutInsights.defaults.profileImagePath,
+      bio: prefs.getString(_kBio) ?? WorkoutInsights.defaults.bio,
       totalWorkouts: prefs.getInt(_kTotalWorkouts) ?? 0,
       totalSeconds: prefs.getInt(_kTotalSeconds) ?? 0,
       currentStreakDays: prefs.getInt(_kCurrentStreakDays) ?? 0,
@@ -723,6 +732,59 @@ class SettingsService {
       return;
     }
     await prefs.setString(_kProfileImagePath, cleaned);
+  }
+
+  Future<void> saveBio(String bio) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleaned = bio.trim();
+    if (cleaned.isEmpty) {
+      await prefs.remove(_kBio);
+      return;
+    }
+    await prefs.setString(_kBio, cleaned);
+  }
+
+  Future<void> saveInsightsToFirestore(String uid, WorkoutInsights insights) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'displayName': insights.displayName,
+        'bio': insights.bio,
+        'profileImagePath': insights.profileImagePath,
+        'totalWorkouts': insights.totalWorkouts,
+        'totalSeconds': insights.totalSeconds,
+        'currentStreakDays': insights.currentStreakDays,
+        'bestStreakDays': insights.bestStreakDays,
+        'lastWorkoutAt': insights.lastWorkoutAt?.millisecondsSinceEpoch,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // Firestore write is best-effort; local SharedPreferences remains the source of truth on failure.
+    }
+  }
+
+  Future<WorkoutInsights?> loadInsightsFromFirestore(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!doc.exists) return null;
+      final data = doc.data();
+      if (data == null) return null;
+
+      final lastWorkoutMillis = data['lastWorkoutAt'] as int?;
+      return WorkoutInsights(
+        displayName: (data['displayName'] as String?) ?? WorkoutInsights.defaults.displayName,
+        profileImagePath: (data['profileImagePath'] as String?) ?? '',
+        bio: (data['bio'] as String?) ?? '',
+        totalWorkouts: (data['totalWorkouts'] as num?)?.toInt() ?? 0,
+        totalSeconds: (data['totalSeconds'] as num?)?.toInt() ?? 0,
+        currentStreakDays: (data['currentStreakDays'] as num?)?.toInt() ?? 0,
+        bestStreakDays: (data['bestStreakDays'] as num?)?.toInt() ?? 0,
+        lastWorkoutAt: lastWorkoutMillis == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(lastWorkoutMillis),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<WorkoutSessionEntry>> loadRecentSessions({int limit = 7}) async {
@@ -876,6 +938,7 @@ const _kVoiceCueRate = 'settings.voiceCueRate';
 
 const _kDisplayName = 'insights.displayName';
 const _kProfileImagePath = 'insights.profileImagePath';
+const _kBio = 'insights.bio';
 const _kTotalWorkouts = 'insights.totalWorkouts';
 const _kTotalSeconds = 'insights.totalSeconds';
 const _kCurrentStreakDays = 'insights.currentStreakDays';
