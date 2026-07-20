@@ -6,6 +6,7 @@ import 'package:my_app/models/workout_models.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:my_app/services/reminder_service.dart';
 import 'package:my_app/services/settings_service.dart';
+import 'package:my_app/services/auth_service.dart';
 
 class FirstPage extends StatefulWidget {
   const FirstPage({super.key, this.onBackPressed});
@@ -24,6 +25,7 @@ class _FirstPageState extends State<FirstPage> {
     creatorId: 'user.local',
     username: 'Athlete',
     profileImagePath: '',
+    bio: '',
     totalPublished: 0,
     followers: 0,
     totalDownloads: 0,
@@ -44,7 +46,16 @@ class _FirstPageState extends State<FirstPage> {
 
   Future<void> _loadInsights() async {
     try {
-      final insights = await _settingsService.loadInsights();
+      final authService = AuthService();
+      final uid = authService.currentUserId;
+
+      WorkoutInsights? insights;
+      if (uid != null) {
+        insights = await _settingsService.loadInsightsFromFirestore(uid);
+      }
+
+      insights ??= await _settingsService.loadInsights();
+
       final sessions = await _settingsService.loadRecentSessions(limit: 30);
       final communityStats = await _settingsService.loadMyCommunityStats();
       final appLifetimeDays = await _settingsService.loadAppLifetimeDays();
@@ -52,7 +63,7 @@ class _FirstPageState extends State<FirstPage> {
         return;
       }
       setState(() {
-        _insights = insights;
+        _insights = insights!;
         _communityStats = communityStats;
         _recentSessions = sessions;
         _appLifetimeDays = appLifetimeDays;
@@ -76,6 +87,7 @@ class _FirstPageState extends State<FirstPage> {
           creatorId: 'user.local',
           username: 'Athlete',
           profileImagePath: '',
+          bio: '',
           totalPublished: 0,
           followers: 0,
           totalDownloads: 0,
@@ -92,19 +104,38 @@ class _FirstPageState extends State<FirstPage> {
   }
 
   Future<void> _promptForDisplayName() async {
-    final controller = TextEditingController(text: _insights.displayName);
+    final nameController = TextEditingController(text: _insights.displayName);
+    final bioController = TextEditingController(text: _insights.bio);
 
-    final nextName = await showDialog<String>(
+    final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1A2235),
-          title: const Text('Your display name'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLength: 24,
-            decoration: const InputDecoration(hintText: 'Type your name'),
+          title: const Text('Edit Profile'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                maxLength: 24,
+                decoration: const InputDecoration(
+                  hintText: 'Display name',
+                  labelText: 'Name',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: bioController,
+                maxLength: 120,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'Tell others about yourself...',
+                  labelText: 'Bio',
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -112,7 +143,10 @@ class _FirstPageState extends State<FirstPage> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              onPressed: () => Navigator.of(dialogContext).pop({
+                'name': nameController.text,
+                'bio': bioController.text,
+              }),
               child: const Text('Save'),
             ),
           ],
@@ -120,11 +154,18 @@ class _FirstPageState extends State<FirstPage> {
       },
     );
 
-    if (nextName == null) {
-      return;
+    if (result == null) return;
+
+    await _settingsService.saveDisplayName(result['name'] ?? '');
+    await _settingsService.saveBio(result['bio'] ?? '');
+
+    final authService = AuthService();
+    final uid = authService.currentUserId;
+    if (uid != null) {
+      final updatedInsights = await _settingsService.loadInsights();
+      await _settingsService.saveInsightsToFirestore(uid, updatedInsights);
     }
 
-    await _settingsService.saveDisplayName(nextName);
     if (mounted) {
       await _loadInsights();
     }
@@ -295,9 +336,11 @@ class _FirstPageState extends State<FirstPage> {
                   color: const Color(0xFF5EC6FF).withValues(alpha: 0.2),
                 ),
               ),
-              ListView(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
-                children: [
+              RefreshIndicator(
+                onRefresh: _loadInsights,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
+                  children: [
                   Align(
                     alignment: Alignment.centerLeft,
                     child: IconButton.filledTonal(
@@ -318,6 +361,7 @@ class _FirstPageState extends State<FirstPage> {
                   const SizedBox(height: 10),
                   _ProfileHeroCard(
                     greeting: greeting,
+                    bio: _insights.bio,
                     onEditName: _promptForDisplayName,
                     onAvatarTap: _showProfilePhotoActions,
                     profileImagePath: _insights.profileImagePath,
@@ -331,6 +375,7 @@ class _FirstPageState extends State<FirstPage> {
                     badges: expandedBadges,
                   ),
                 ],
+              ),
               ),
             ],
           ),
@@ -426,12 +471,14 @@ class _FirstPageState extends State<FirstPage> {
 class _ProfileHeroCard extends StatelessWidget {
   const _ProfileHeroCard({
     required this.greeting,
+    required this.bio,
     required this.onEditName,
     required this.onAvatarTap,
     required this.profileImagePath,
   });
 
   final String greeting;
+  final String bio;
   final VoidCallback onEditName;
   final VoidCallback onAvatarTap;
   final String profileImagePath;
@@ -545,10 +592,21 @@ class _ProfileHeroCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                const Text(
-                  'Stay consistent and stack small wins.',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
+                if (bio.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      bio,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white60, fontSize: 12, fontStyle: FontStyle.italic),
+                    ),
+                  )
+                else
+                  const Text(
+                    'Stay consistent and stack small wins.',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
                 const SizedBox(height: 2),
                 const Text(
                   'Next up: VO2 Max training.',
