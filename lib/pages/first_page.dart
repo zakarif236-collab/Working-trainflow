@@ -341,22 +341,54 @@ class _FirstPageState extends State<FirstPage> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
                   children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton.filledTonal(
-                      onPressed: () {
-                        if (widget.onBackPressed != null) {
-                          widget.onBackPressed!();
-                          return;
-                        }
-                        Navigator.of(context).maybePop();
-                      },
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF253454),
-                        foregroundColor: Colors.white,
+                  Row(
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: () {
+                          if (widget.onBackPressed != null) {
+                            widget.onBackPressed!();
+                            return;
+                          }
+                          Navigator.of(context).maybePop();
+                        },
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF253454),
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      IconButton.filledTonal(
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: const Color(0xFF1A2235),
+                              title: const Text('Sign Out'),
+                              content: const Text('Are you sure you want to sign out?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(false),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.of(ctx).pop(true),
+                                  child: const Text('Sign Out'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await AuthService().signOut();
+                          }
+                        },
+                        icon: const Icon(Icons.logout_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF253454),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   _ProfileHeroCard(
