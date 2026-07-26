@@ -253,6 +253,8 @@ class WorkoutBuilderResumeSession {
 
 enum WorkoutDifficulty { beginner, intermediate, advanced }
 
+enum WorkoutVisibility { public, followers, private }
+
 enum CommunityTabKind { trending, popular, newest, following, favorites }
 
 class CommunityComment {
@@ -320,6 +322,7 @@ class CommunityWorkout {
     required this.isSaved,
     required this.comments,
     required this.isFollowingCreator,
+    this.visibility = 'public',
     this.userRating,
   });
 
@@ -347,6 +350,7 @@ class CommunityWorkout {
   final int? userRating;
   final List<CommunityComment> comments;
   final bool isFollowingCreator;
+  final String visibility;
 
   int get estimatedDurationSeconds {
     var total = 0;
@@ -390,6 +394,7 @@ class CommunityWorkout {
     bool clearUserRating = false,
     List<CommunityComment>? comments,
     bool? isFollowingCreator,
+    String? visibility,
   }) {
     return CommunityWorkout(
       id: id ?? this.id,
@@ -416,6 +421,7 @@ class CommunityWorkout {
       userRating: clearUserRating ? null : (userRating ?? this.userRating),
       comments: comments ?? this.comments,
       isFollowingCreator: isFollowingCreator ?? this.isFollowingCreator,
+      visibility: visibility ?? this.visibility,
     );
   }
 
@@ -445,6 +451,7 @@ class CommunityWorkout {
       'userRating': userRating,
       'comments': comments.map((comment) => comment.toJson()).toList(growable: false),
       'isFollowingCreator': isFollowingCreator,
+      'visibility': visibility,
     };
   }
 
@@ -519,6 +526,7 @@ class CommunityWorkout {
       userRating: (json['userRating'] as num?)?.toInt(),
       comments: comments,
       isFollowingCreator: json['isFollowingCreator'] as bool? ?? false,
+      visibility: json['visibility'] as String? ?? 'public',
     );
   }
 }
