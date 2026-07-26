@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
@@ -18,6 +19,9 @@ class MusicService {
   bool _isDucked = false;
   List<SongModel> _playlist = const [];
   int _playlistIndex = -1;
+
+  final ValueNotifier<bool> playingNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<SongModel?> songNotifier = ValueNotifier<SongModel?>(null);
 
   SongModel? get currentSong => _currentSong;
   AudioPlayer get player => _player;
@@ -92,7 +96,9 @@ class MusicService {
       _playbackSpeed = 1.0;
       await _player.setSpeed(_playbackSpeed);
       await _player.play();
+      playingNotifier.value = true;
       _currentSong = song;
+      songNotifier.value = song;
       _playlistIndex = _playlist.indexWhere((s) => s.id == song.id);
     } catch (e) {
       throw MusicServiceException('Playback failed: $e');
@@ -134,6 +140,7 @@ class MusicService {
   Future<void> togglePlayPause() async {
     if (_player.playing) {
       await _player.pause();
+      playingNotifier.value = false;
       return;
     }
 
@@ -144,12 +151,15 @@ class MusicService {
     }
 
     await _player.play();
+    playingNotifier.value = true;
   }
 
   Future<void> stop() async {
     await _player.stop();
     _playbackSpeed = 1.0;
     _currentSong = null;
+    songNotifier.value = null;
+    playingNotifier.value = false;
     _playlistIndex = -1;
     _isDucked = false;
   }
@@ -189,6 +199,8 @@ class MusicService {
   }
 
   Future<void> dispose() async {
+    playingNotifier.dispose();
+    songNotifier.dispose();
     await _player.dispose();
   }
 }
