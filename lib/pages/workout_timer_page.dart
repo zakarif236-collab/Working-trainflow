@@ -14,6 +14,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/sfx_service.dart';
 import 'package:my_app/widgets/home_timer_layout.dart';
+import 'package:my_app/widgets/music_controls.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
 import 'package:my_app/widgets/workout_timer_layout.dart';
 import 'package:video_player/video_player.dart';
@@ -104,7 +105,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   bool _showCustomizationPanel = false;
   bool _hasStarted = false;
   List<SongModel> _songs = const [];
-  bool _loadingSongs = false;
   List<String> _exerciseNames = [];
 
   @override
@@ -708,10 +708,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   }
 
   Future<void> _openMusicPicker() async {
-    setState(() {
-      _loadingSongs = true;
-    });
-
     try {
       await _musicService.initialize();
       final songs = await _musicService.loadSongs();
@@ -819,23 +815,8 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _loadingSongs = false;
-        });
-      }
+      // MusicControls handles loading state via MusicService notifiers
     }
-  }
-
-  void _toggleMusic() {
-    if (_musicService.player.playing) {
-      _musicService.togglePlayPause();
-    } else if (_musicService.currentSong != null) {
-      _musicService.togglePlayPause();
-    } else {
-      _openMusicPicker();
-    }
-    setState(() {});
   }
 
   void _updateConfig({
@@ -1330,6 +1311,10 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
           ),
         ],
       ],
+      musicControls: MusicControls(
+        musicService: _musicService,
+        onOpenPicker: _openMusicPicker,
+      ),
     );
   }
 
@@ -1403,12 +1388,10 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       headerSubtitle: _phaseHeaderSubtitle(phase),
       onBackPressed: _goBackToHome,
       canPop: Navigator.of(context).canPop(),
-      onMusicToggle: _toggleMusic,
-      isMusicPlaying: _musicService.player.playing,
-      selectedSongTitle: _musicService.currentSong?.title,
-      loadingSongs: _loadingSongs,
-      onMusicPickerTap: _openMusicPicker,
-      songName: _musicService.currentSong?.title,
+      musicControls: MusicControls(
+        musicService: _musicService,
+        onOpenPicker: _openMusicPicker,
+      ),
     );
   }
 
