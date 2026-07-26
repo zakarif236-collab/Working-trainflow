@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/models/workout_schedule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -14,6 +15,9 @@ class AppSettings {
     required this.muteVoiceWhileMusicPlays,
     required this.voiceCueVolume,
     required this.voiceCueRate,
+    this.countdownBeepsEnabled = true,
+    this.transitionSoundEnabled = true,
+    this.musicDuckingEnabled = true,
   });
 
   final WorkoutConfig config;
@@ -22,6 +26,9 @@ class AppSettings {
   final bool muteVoiceWhileMusicPlays;
   final double voiceCueVolume;
   final double voiceCueRate;
+  final bool countdownBeepsEnabled;
+  final bool transitionSoundEnabled;
+  final bool musicDuckingEnabled;
 
   static AppSettings defaults() {
     return AppSettings(
@@ -31,6 +38,9 @@ class AppSettings {
       muteVoiceWhileMusicPlays: true,
       voiceCueVolume: 1.0,
       voiceCueRate: 0.52,
+      countdownBeepsEnabled: true,
+      transitionSoundEnabled: true,
+      musicDuckingEnabled: true,
     );
   }
 }
@@ -465,14 +475,14 @@ class SettingsService {
     final followers = (followerCounts[creatorId] ?? 0) > derivedFollowers
         ? (followerCounts[creatorId] ?? 0)
         : derivedFollowers;
-    final totalDownloads = creatorWorkouts.fold<int>(0, (sum, entry) => sum + entry.downloads);
-    final totalShares = creatorWorkouts.fold<int>(0, (sum, entry) => sum + entry.shares);
-    final likesReceived = creatorWorkouts.fold<int>(0, (sum, entry) => sum + entry.likes);
-    final fiveStarRatings = creatorWorkouts.fold<int>(0, (sum, entry) {
+    final totalDownloads = creatorWorkouts.fold<int>(0, (total, entry) => total + entry.downloads);
+    final totalShares = creatorWorkouts.fold<int>(0, (total, entry) => total + entry.shares);
+    final likesReceived = creatorWorkouts.fold<int>(0, (total, entry) => total + entry.likes);
+    final fiveStarRatings = creatorWorkouts.fold<int>(0, (total, entry) {
       if (entry.userRating == 5) {
-        return sum + 1;
+        return total + 1;
       }
-      return sum;
+      return total;
     });
 
     final badges = <String>[];
@@ -675,6 +685,9 @@ class SettingsService {
           prefs.getBool(_kMuteVoiceWhileMusicPlays) ?? defaults.muteVoiceWhileMusicPlays,
       voiceCueVolume: prefs.getDouble(_kVoiceCueVolume) ?? defaults.voiceCueVolume,
       voiceCueRate: prefs.getDouble(_kVoiceCueRate) ?? defaults.voiceCueRate,
+      countdownBeepsEnabled: prefs.getBool(_kCountdownBeepsEnabled) ?? defaults.countdownBeepsEnabled,
+      transitionSoundEnabled: prefs.getBool(_kTransitionSoundEnabled) ?? defaults.transitionSoundEnabled,
+      musicDuckingEnabled: prefs.getBool(_kMusicDuckingEnabled) ?? defaults.musicDuckingEnabled,
     );
   }
 
@@ -695,6 +708,9 @@ class SettingsService {
     await prefs.setBool(_kMuteVoiceWhileMusicPlays, settings.muteVoiceWhileMusicPlays);
     await prefs.setDouble(_kVoiceCueVolume, settings.voiceCueVolume);
     await prefs.setDouble(_kVoiceCueRate, settings.voiceCueRate);
+    await prefs.setBool(_kCountdownBeepsEnabled, settings.countdownBeepsEnabled);
+    await prefs.setBool(_kTransitionSoundEnabled, settings.transitionSoundEnabled);
+    await prefs.setBool(_kMusicDuckingEnabled, settings.musicDuckingEnabled);
   }
 
   Future<WorkoutInsights> loadInsights() async {
@@ -919,6 +935,33 @@ class SettingsService {
         return 'custom';
     }
   }
+
+  // --- Workout Schedule ---
+
+  static const _scheduleKey = 'workout_schedule';
+
+  Future<WorkoutSchedule> loadWorkoutSchedule() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_scheduleKey);
+    if (raw == null || raw.isEmpty) {
+      return const WorkoutSchedule();
+    }
+    try {
+      return WorkoutSchedule.decode(raw);
+    } catch (_) {
+      return const WorkoutSchedule();
+    }
+  }
+
+  Future<void> saveWorkoutSchedule(WorkoutSchedule schedule) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_scheduleKey, schedule.encode());
+  }
+
+  Future<void> clearWorkoutSchedule() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_scheduleKey);
+  }
 }
 
 const _kSets = 'settings.sets';
@@ -954,3 +997,7 @@ const _kCreatorFollowerCounts = 'community.creatorFollowerCounts';
 const _kLocalCreatorId = 'user.local';
 const _kFirstOpenEpochDay = 'app.firstOpenEpochDay';
 const _kSeedVersion = '1';
+
+const _kCountdownBeepsEnabled = 'settings.countdownBeepsEnabled';
+const _kTransitionSoundEnabled = 'settings.transitionSoundEnabled';
+const _kMusicDuckingEnabled = 'settings.musicDuckingEnabled';
