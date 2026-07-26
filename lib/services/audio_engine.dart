@@ -153,7 +153,7 @@ class AudioEngine {
 
   // --- Voice Announcements ---
 
-  Future<void> _speakClip(String clipName) async {
+  Future<void> _speakClip(String clipName, {String? fallbackText}) async {
     final fp = _currentFingerprint;
     if (fp == null) return;
 
@@ -167,15 +167,17 @@ class AudioEngine {
         played = await _voice.playClip(fp, clipName);
       }
       if (!played) {
-        final fallbackText = GeminiVoiceService.standardPrompts[clipName] ?? clipName;
-        await _voice.speakFallback(fallbackText);
+        final text = fallbackText ??
+            GeminiVoiceService.standardPrompts[clipName] ??
+            clipName;
+        await _voice.speakFallback(text);
       }
       await Future.delayed(const Duration(milliseconds: 500));
       await _unduckMusic();
     });
   }
 
-  void _fireClip(String clipName) {
+  void _fireClip(String clipName, {String? fallbackText}) {
     final fp = _currentFingerprint;
     if (fp == null) return;
     unawaited(() async {
@@ -187,8 +189,10 @@ class AudioEngine {
       if (!played) {
         played = await _voice.playClip(fp, clipName);
         if (!played) {
-          final fallbackText = GeminiVoiceService.standardPrompts[clipName] ?? clipName;
-          await _voice.speakFallback(fallbackText);
+          final text = fallbackText ??
+              GeminiVoiceService.standardPrompts[clipName] ??
+              clipName;
+          await _voice.speakFallback(text);
         }
       }
       await Future.delayed(const Duration(milliseconds: 300));
@@ -212,7 +216,7 @@ class AudioEngine {
   void announceExercise(String name, {bool shouldSpeak = true}) {
     if (!shouldSpeak) return;
     final clipKey = 'exercise_${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}';
-    _fireClip(clipKey);
+    _fireClip(clipKey, fallbackText: '$name.');
   }
 
   Future<void> announcePhase(String label, {bool shouldSpeak = true}) async {
