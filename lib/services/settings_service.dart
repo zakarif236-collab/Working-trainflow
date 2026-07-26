@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/models/workout_schedule.dart';
+import 'package:my_app/services/community_firestore_service.dart';
+import 'package:my_app/services/push_notification_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -313,6 +316,23 @@ class SettingsService {
     final workouts = await loadCommunityWorkouts();
     final next = [workout, ...workouts];
     await saveCommunityWorkouts(next);
+
+    // Publish to Firestore for global visibility
+    try {
+      final firestoreId = await CommunityFirestoreService.instance.publishWorkout(input);
+      if (firestoreId != null) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await PushNotificationService.instance.sendShareNotification(
+            senderName: user.displayName ?? 'Someone',
+            workoutTitle: input.title,
+          );
+        }
+      }
+    } catch (_) {
+      // Firestore publish is best-effort
+    }
+
     return workout;
   }
 
