@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/pages/auth_page.dart';
 import 'package:my_app/pages/user_profile_page.dart';
 import 'package:my_app/services/auth_service.dart';
+import 'package:my_app/services/community_firestore_service.dart';
 import 'package:my_app/services/settings_service.dart';
 
 class CommunityPage extends StatefulWidget {
@@ -40,6 +42,7 @@ class _CommunityPageState extends State<CommunityPage>
   WorkoutBuilderRoutine? _prefillRoutine;
   bool _didReadArgs = false;
   bool _loading = true;
+  StreamSubscription<List<CommunityWorkout>>? _feedSubscription;
 
   @override
   void initState() {
@@ -66,21 +69,34 @@ class _CommunityPageState extends State<CommunityPage>
 
   @override
   void dispose() {
+    _feedSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    final workouts = await _settingsService.loadCommunityWorkouts();
-    final routines = await _settingsService.loadWorkoutBuilderRoutines();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _workouts = workouts;
-      _myRoutines = routines;
-      _loading = false;
-    });
+    setState(() => _loading = true);
+
+    _myRoutines = await _settingsService.loadWorkoutBuilderRoutines();
+
+    _feedSubscription?.cancel();
+    _feedSubscription = CommunityFirestoreService.instance.streamWorkouts().listen(
+      (workouts) {
+        if (!mounted) return;
+        setState(() {
+          _workouts = workouts;
+          _loading = false;
+        });
+      },
+      onError: (_) async {
+        final local = await _settingsService.loadCommunityWorkouts();
+        if (!mounted) return;
+        setState(() {
+          _workouts = local;
+          _loading = false;
+        });
+      },
+    );
   }
 
   final AuthService _authService = AuthService();
