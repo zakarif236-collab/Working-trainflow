@@ -10,6 +10,7 @@ import 'package:my_app/services/audio_engine.dart';
 import 'package:my_app/pages/audio_settings_page.dart';
 import 'package:my_app/services/gemini_voice_service.dart';
 import 'package:my_app/services/music_service.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/sfx_service.dart';
 import 'package:my_app/widgets/home_timer_layout.dart';
@@ -102,6 +103,8 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   bool _loadingExerciseMedia = false;
   bool _showCustomizationPanel = false;
   bool _hasStarted = false;
+  List<SongModel> _songs = const [];
+  bool _loadingSongs = false;
   List<String> _exerciseNames = [];
 
   @override
@@ -703,6 +706,137 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     }
   }
 
+  Future<void> _openMusicPicker() async {
+    setState(() {
+      _loadingSongs = true;
+    });
+
+    try {
+      await _musicService.initialize();
+      final songs = await _musicService.loadSongs();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _songs = songs;
+      });
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF111826),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (context) {
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * 0.65,
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 54,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      color: Colors.white24,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Select Workout Track',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Pick a local song from your library',
+                    style: TextStyle(color: Colors.white60),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: _songs.length,
+                      separatorBuilder: (_, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final song = _songs[index];
+                        final selected = _musicService.currentSong?.id == song.id;
+                        return ListTile(
+                          leading: Icon(
+                            selected
+                                ? Icons.equalizer_rounded
+                                : Icons.music_note_rounded,
+                            color: selected
+                                ? const Color(0xFF2AB7CA)
+                                : Colors.white70,
+                          ),
+                          title: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            song.artist ?? 'Unknown artist',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                          onTap: () async {
+                            try {
+                              await _musicService.playSong(song);
+                              if (!context.mounted) {
+                                return;
+                              }
+                              Navigator.pop(context);
+                              setState(() {});
+                            } on MusicServiceException catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.message)),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } on MusicServiceException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingSongs = false;
+        });
+      }
+    }
+  }
+
+  void _toggleMusic() {
+    if (_musicService.player.playing) {
+      _musicService.togglePlayPause();
+    } else if (_musicService.currentSong != null) {
+      _musicService.togglePlayPause();
+    } else {
+      _openMusicPicker();
+    }
+    setState(() {});
+  }
+
   void _updateConfig({
     int? sets,
     int? work,
@@ -1268,6 +1402,12 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       headerSubtitle: _phaseHeaderSubtitle(phase),
       onBackPressed: _goBackToHome,
       canPop: Navigator.of(context).canPop(),
+      onMusicToggle: _toggleMusic,
+      isMusicPlaying: _musicService.player.playing,
+      selectedSongTitle: _musicService.currentSong?.title,
+      loadingSongs: _loadingSongs,
+      onMusicPickerTap: _openMusicPicker,
+      songName: _musicService.currentSong?.title,
     );
   }
 
