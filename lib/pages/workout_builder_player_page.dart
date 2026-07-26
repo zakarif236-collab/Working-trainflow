@@ -13,6 +13,7 @@ import 'package:my_app/services/music_service.dart';
 import 'package:my_app/services/sfx_service.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/widgets/countdown_bar.dart';
+import 'package:my_app/widgets/music_controls.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
 import 'package:my_app/widgets/workout_timeline.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -46,7 +47,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   late AudioEngine _audioEngine;
   late MusicService _musicService;
   List<SongModel> _songs = const [];
-  bool _loadingSongs = false;
   final SettingsService _settingsService = SettingsService();
 
   WorkoutBuilderRoutine? _routine;
@@ -489,10 +489,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   }
 
   Future<void> _openMusicPicker() async {
-    setState(() {
-      _loadingSongs = true;
-    });
-
     try {
       await _musicService.initialize();
       final songs = await _musicService.loadSongs();
@@ -599,24 +595,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
           SnackBar(content: Text(e.message)),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loadingSongs = false;
-        });
-      }
     }
-  }
-
-  void _toggleMusic() {
-    if (_musicService.player.playing) {
-      _musicService.togglePlayPause();
-    } else if (_musicService.currentSong != null) {
-      _musicService.togglePlayPause();
-    } else {
-      _openMusicPicker();
-    }
-    setState(() {});
   }
 
   @override
@@ -758,10 +737,11 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        _MusicChip(
-                          loading: _loadingSongs,
-                          onTap: _openMusicPicker,
-                          selectedSongTitle: _musicService.currentSong?.title,
+                        Expanded(
+                          child: MusicControls(
+                            musicService: _musicService,
+                            onOpenPicker: _openMusicPicker,
+                          ),
                         ),
                       ],
                     ),
@@ -831,9 +811,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
                           onStartPause: _isRunning ? _pause : (_isComplete ? _stopAndReset : _start),
                           onReset: _stopAndReset,
                           onSkip: _skip,
-                          onMusicToggle: _toggleMusic,
-                          isMusicPlaying: _musicService.player.playing,
-                          songName: _musicService.currentSong?.title,
                         ),
                         const SizedBox(height: 24),
                         WorkoutTimeline(
@@ -1089,9 +1066,6 @@ class _ControlBar extends StatelessWidget {
     required this.onStartPause,
     required this.onReset,
     required this.onSkip,
-    required this.onMusicToggle,
-    required this.isMusicPlaying,
-    this.songName,
   });
 
   final bool running;
@@ -1100,9 +1074,6 @@ class _ControlBar extends StatelessWidget {
   final VoidCallback onStartPause;
   final VoidCallback onReset;
   final VoidCallback onSkip;
-  final VoidCallback onMusicToggle;
-  final bool isMusicPlaying;
-  final String? songName;
 
   @override
   Widget build(BuildContext context) {
@@ -1191,45 +1162,6 @@ class _ControlBar extends StatelessWidget {
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: onMusicToggle,
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              foregroundColor: isMusicPlaying
-                  ? const Color(0xFFFF8A1E)
-                  : Colors.white70,
-              backgroundColor: isMusicPlaying
-                  ? const Color(0xFFFF8A1E).withValues(alpha: 0.1)
-                  : Colors.white.withValues(alpha: 0.06),
-              side: BorderSide(
-                color: isMusicPlaying
-                    ? const Color(0xFFFF8A1E).withValues(alpha: 0.3)
-                    : Colors.white.withValues(alpha: 0.12),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            icon: Icon(
-              isMusicPlaying ? Icons.stop_rounded : Icons.music_off_rounded,
-              size: 20,
-            ),
-            label: Text(
-              isMusicPlaying
-                  ? (songName != null ? 'Stop  ${songName!}' : 'Music Playing')
-                  : 'Play Music',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ),
         ),
       ],
     );
@@ -1525,48 +1457,4 @@ class _CompletionStat extends StatelessWidget {
   }
 }
 
-class _MusicChip extends StatelessWidget {
-  const _MusicChip({
-    required this.loading,
-    required this.onTap,
-    required this.selectedSongTitle,
-  });
 
-  final bool loading;
-  final VoidCallback onTap;
-  final String? selectedSongTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: loading ? null : onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white24),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (loading)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              const Icon(Icons.library_music_rounded, color: Colors.white70),
-            const SizedBox(width: 8),
-            Text(
-              selectedSongTitle == null ? 'Music' : 'Track set',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
