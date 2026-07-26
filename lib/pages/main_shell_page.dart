@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/models/workout_models.dart';
-import 'package:my_app/models/workout_schedule.dart';
 import 'package:my_app/pages/auth_page.dart';
 import 'package:my_app/pages/first_page.dart';
 import 'package:my_app/pages/home_page.dart';
