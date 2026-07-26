@@ -116,6 +116,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     _audioEngine = AudioEngine(
       voice: GeminiVoiceService(),
       sfx: SfxService(),
+      music: _musicService,
     );
     _pulseController = AnimationController(
       vsync: this,
