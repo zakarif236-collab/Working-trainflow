@@ -13,10 +13,18 @@ class MusicService {
 
   SongModel? _currentSong;
   double _playbackSpeed = 1.0;
+  final double _normalVolume = 1.0;
+  double _duckedVolume = 0.3;
+  bool _isDucked = false;
+  List<SongModel> _playlist = const [];
+  int _playlistIndex = -1;
 
   SongModel? get currentSong => _currentSong;
   AudioPlayer get player => _player;
   double get playbackSpeed => _playbackSpeed;
+  bool get hasNext => _playlist.isNotEmpty && _playlistIndex < _playlist.length - 1;
+  bool get hasPrevious => _playlist.isNotEmpty && _playlistIndex > 0;
+  bool get isDucked => _isDucked;
 
   Future<void> initialize() async {
     if (!Platform.isAndroid) {
@@ -55,6 +63,11 @@ class MusicService {
         );
       }
 
+      _playlist = playable;
+      if (_currentSong != null) {
+        _playlistIndex = playable.indexWhere((s) => s.id == _currentSong!.id);
+      }
+
       return playable;
     } catch (e) {
       if (e is MusicServiceException) {
@@ -80,9 +93,26 @@ class MusicService {
       await _player.setSpeed(_playbackSpeed);
       await _player.play();
       _currentSong = song;
+      _playlistIndex = _playlist.indexWhere((s) => s.id == song.id);
     } catch (e) {
       throw MusicServiceException('Playback failed: $e');
     }
+  }
+
+  Future<void> next() async {
+    if (_playlist.isEmpty || _playlistIndex >= _playlist.length - 1) {
+      return;
+    }
+    _playlistIndex++;
+    await playSong(_playlist[_playlistIndex]);
+  }
+
+  Future<void> previous() async {
+    if (_playlist.isEmpty || _playlistIndex <= 0) {
+      return;
+    }
+    _playlistIndex--;
+    await playSong(_playlist[_playlistIndex]);
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
@@ -119,6 +149,43 @@ class MusicService {
   Future<void> stop() async {
     await _player.stop();
     _playbackSpeed = 1.0;
+    _currentSong = null;
+    _playlistIndex = -1;
+    _isDucked = false;
+  }
+
+  Future<void> duck() async {
+    if (!_player.playing || _isDucked) {
+      return;
+    }
+    _isDucked = true;
+    try {
+      await _player.setVolume(_duckedVolume);
+    } catch (_) {
+      // Best effort
+    }
+  }
+
+  Future<void> unduck() async {
+    if (!_isDucked) {
+      return;
+    }
+    _isDucked = false;
+    try {
+      await _player.setVolume(_normalVolume);
+    } catch (_) {
+      // Best effort
+    }
+  }
+
+  void setDuckedVolume(double volume) {
+    _duckedVolume = volume.clamp(0.1, 0.5);
+  }
+
+  Future<void> setVolume(double volume) async {
+    try {
+      await _player.setVolume(volume.clamp(0.0, 1.0));
+    } catch (_) {}
   }
 
   Future<void> dispose() async {

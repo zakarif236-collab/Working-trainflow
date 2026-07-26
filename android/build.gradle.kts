@@ -2,6 +2,10 @@ import java.io.File
 import org.gradle.api.tasks.compile.JavaCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    id("com.google.gms.google-services") version "4.3.15" apply false
+}
+
 allprojects {
     repositories {
         google()

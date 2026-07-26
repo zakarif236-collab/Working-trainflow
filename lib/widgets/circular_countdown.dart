@@ -7,14 +7,16 @@ class CircularCountdown extends StatelessWidget {
     super.key,
     required this.progress,
     required this.seconds,
-    required this.label,
+    required this.phaseLabel,
     required this.gradient,
+    this.subtitle,
   });
 
   final double progress;
   final int seconds;
-  final String label;
+  final String phaseLabel;
   final List<Color> gradient;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -33,19 +35,30 @@ class CircularCountdown extends StatelessWidget {
             children: [
               Text(
                 _formatTime(seconds),
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
+                style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -2,
+                      fontSize: 64,
                     ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w600,
+                phaseLabel,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.orange.shade300,
+                      fontWeight: FontWeight.w700,
                     ),
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  subtitle!,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
             ],
           ),
         ),

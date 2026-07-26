@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/pages/auth_page.dart';
+import 'package:my_app/pages/user_profile_page.dart';
+import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/settings_service.dart';
 
 class CommunityPage extends StatefulWidget {
@@ -80,7 +83,16 @@ class _CommunityPageState extends State<CommunityPage>
     });
   }
 
+  final AuthService _authService = AuthService();
+
+  Future<bool> _requireAuth() async {
+    if (_authService.currentUserId != null) return true;
+    final signedIn = await AuthPage.showAsSheet(context);
+    return signedIn;
+  }
+
   Future<void> _toggleLike(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
     final next = await _settingsService.toggleCommunityLike(workout.id);
     if (!mounted) {
       return;
@@ -91,6 +103,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _toggleFavorite(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
     final next = await _settingsService.toggleCommunityFavorite(workout.id);
     if (!mounted) {
       return;
@@ -101,6 +114,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _saveToMyWorkouts(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
     final next = await _settingsService.saveCommunityWorkoutToMyWorkouts(workout.id);
     if (!mounted) {
       return;
@@ -118,6 +132,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _shareWorkout(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
     final shareText =
         'Check out ${workout.title} by @${workout.creatorUsername}: fitpulse://community/${workout.id}';
     await Clipboard.setData(ClipboardData(text: shareText));
@@ -138,6 +153,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _rateWorkout(CommunityWorkout workout) async {
+    if (!await _requireAuth() || !mounted) return;
     final selected = await showDialog<int>(
       context: context,
       builder: (context) {
@@ -207,6 +223,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _commentWorkout(CommunityWorkout workout) async {
+    if (!await _requireAuth() || !mounted) return;
     final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
@@ -251,6 +268,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _toggleFollowCreator(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
     final next = await _settingsService.toggleFollowCreator(workout.creatorId);
     if (!mounted) {
       return;
@@ -261,78 +279,19 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _openCreatorProfile(CommunityWorkout workout) async {
-    final stats = await _settingsService.loadCreatorCommunityStats(workout.creatorId);
     if (!mounted) {
       return;
     }
-
-    final creatorWorkouts = _workouts
-        .where((entry) => entry.creatorId == workout.creatorId)
-        .toList(growable: false);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF101A2B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfilePage(creatorId: workout.creatorId),
       ),
-      builder: (sheetContext) {
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-            child: DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.92,
-              minChildSize: 0.56,
-              maxChildSize: 0.96,
-              builder: (context, controller) {
-                return ListView(
-                  controller: controller,
-                  children: [
-                    _CreatorProfileHeader(stats: stats),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: stats.badges
-                          .map((badge) => _pill(badge, Icons.workspace_premium_rounded))
-                          .toList(growable: false),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Published Workouts',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    ...creatorWorkouts.map(
-                      (entry) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(entry.title),
-                        subtitle: Text(
-                          '${entry.downloads} downloads • ${entry.likes} likes • ${entry.averageRating.toStringAsFixed(1)} ★',
-                        ),
-                        trailing: IconButton(
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop();
-                            _shareWorkout(entry);
-                          },
-                          icon: const Icon(Icons.share_rounded),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-      },
     );
+    await _loadData();
   }
 
   Future<void> _openPublishSheet({WorkoutBuilderRoutine? prefillRoutine}) async {
+    if (!await _requireAuth() || !mounted) return;
     if (_myRoutines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -545,7 +504,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 }
 
-class _CommunityWorkoutCard extends StatelessWidget {
+class _CommunityWorkoutCard extends StatefulWidget {
   const _CommunityWorkoutCard({
     required this.workout,
     required this.onLike,
@@ -567,6 +526,13 @@ class _CommunityWorkoutCard extends StatelessWidget {
   final VoidCallback onRate;
   final VoidCallback onCreatorTap;
   final VoidCallback onFollowCreator;
+
+  @override
+  State<_CommunityWorkoutCard> createState() => _CommunityWorkoutCardState();
+}
+
+class _CommunityWorkoutCardState extends State<_CommunityWorkoutCard> {
+  bool _expanded = false;
 
   String _difficultyLabel(WorkoutDifficulty difficulty) {
     switch (difficulty) {
@@ -590,151 +556,250 @@ class _CommunityWorkoutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: Colors.white.withValues(alpha: 0.06),
-      child: InkWell(
-        onTap: onRate,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (workout.coverImagePath.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(workout.coverImagePath),
-                      height: 148,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) {
-                        return Container(
-                          height: 100,
-                          alignment: Alignment.center,
-                          color: Colors.black26,
-                          child: const Text('Cover unavailable'),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              Row(
-                children: [
-                  Expanded(
+    final workout = widget.workout;
+    final allPills = [
+      _PillData(workout.category, Icons.category_rounded),
+      _PillData(_difficultyLabel(workout.difficulty), Icons.timeline_rounded),
+      _PillData(_formatDuration(workout.estimatedDurationSeconds), Icons.timer_rounded),
+      _PillData('${workout.exercises.length} exercises', Icons.fitness_center_rounded),
+      ...workout.tags.map((tag) => _PillData(tag, Icons.sell_rounded)),
+    ];
+    final visiblePills = _expanded ? allPills : allPills.take(3).toList();
+    final hasMore = allPills.length > 3;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      color: const Color(0xFF0D1421),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: widget.onCreatorTap,
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: const Color(0xFF2A3A5C),
                     child: Text(
-                      workout.title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      workout.creatorUsername.isNotEmpty
+                          ? workout.creatorUsername[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: Color(0xFF9BC4FF),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
-                  FilledButton.tonalIcon(
-                    onPressed: onFollowCreator,
-                    icon: Icon(
-                      workout.isFollowingCreator
-                          ? Icons.person_remove_alt_1_rounded
-                          : Icons.person_add_alt_1_rounded,
-                    ),
-                    label: Text(workout.isFollowingCreator ? 'Following' : 'Follow'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              InkWell(
-                onTap: onCreatorTap,
-                child: Text(
-                  '@${workout.creatorUsername}',
-                  style: const TextStyle(color: Color(0xFF9BC4FF), fontWeight: FontWeight.w700),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(workout.description, style: const TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  _pill(workout.category, Icons.category_rounded),
-                  _pill(_difficultyLabel(workout.difficulty), Icons.timeline_rounded),
-                  _pill(_formatDuration(workout.estimatedDurationSeconds), Icons.timer_rounded),
-                  _pill('${workout.exercises.length} exercises', Icons.fitness_center_rounded),
-                  ...workout.tags.map((tag) => _pill(tag, Icons.sell_rounded)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _metric('⬇', workout.downloads.toString()),
-                  _metric('❤', workout.likes.toString()),
-                  _metric('★', workout.averageRating.toStringAsFixed(1)),
-                  _metric('🗳', workout.ratingsCount.toString()),
-                  _metric('💬', workout.comments.length.toString()),
-                  _metric('📤', workout.shares.toString()),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: onLike,
-                    icon: Icon(
-                      workout.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: workout.isLiked ? const Color(0xFFFF8A95) : Colors.white,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: widget.onCreatorTap,
+                    child: Text(
+                      workout.creatorUsername,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: onFavorite,
-                    icon: Icon(
-                      workout.isFavorited
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
-                      color: workout.isFavorited ? const Color(0xFFFFD166) : Colors.white,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onComment,
-                    icon: const Icon(Icons.mode_comment_outlined),
-                  ),
-                  IconButton(
-                    onPressed: onRate,
-                    icon: const Icon(Icons.reviews_rounded),
-                  ),
-                  const Spacer(),
-                  OutlinedButton.icon(
-                    onPressed: onShare,
-                    icon: const Icon(Icons.share_rounded),
-                    label: const Text('Share'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: workout.isSaved ? null : onSave,
-                    icon: Icon(
-                      workout.isSaved
-                          ? Icons.check_circle_rounded
-                          : Icons.download_rounded,
-                    ),
-                    label: Text(workout.isSaved ? 'Saved' : 'Save'),
-                  ),
-                ],
-              ),
-              if (workout.comments.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                ),
+                GestureDetector(
+                  onTap: widget.onFollowCreator,
                   child: Text(
-                    'Latest: ${workout.comments.first.authorUsername} - ${workout.comments.first.message}',
-                    style: const TextStyle(color: Colors.white60),
+                    workout.isFollowingCreator ? 'Following' : 'Follow',
+                    style: TextStyle(
+                      color: workout.isFollowingCreator
+                          ? Colors.white54
+                          : const Color(0xFF9BC4FF),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
-        ),
+          if (workout.coverImagePath.trim().isNotEmpty)
+            GestureDetector(
+              onDoubleTap: widget.onLike,
+              child: Image.file(
+                File(workout.coverImagePath),
+                width: double.infinity,
+                height: 320,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) {
+                  return Container(
+                    height: 180,
+                    alignment: Alignment.center,
+                    color: const Color(0xFF141E30),
+                    child: const Text('Cover unavailable', style: TextStyle(color: Colors.white38)),
+                  );
+                },
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: widget.onLike,
+                  onLongPress: widget.onRate,
+                  child: Icon(
+                    workout.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: workout.isLiked ? const Color(0xFFFF4D6A) : Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                GestureDetector(
+                  onTap: widget.onComment,
+                  child: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 16),
+                GestureDetector(
+                  onTap: widget.onShare,
+                  child: const Icon(Icons.send_rounded, color: Colors.white, size: 24),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: widget.onSave,
+                  child: Icon(
+                    workout.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    color: workout.isSaved ? Colors.white : Colors.white,
+                    size: 26,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (workout.likes > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                '${workout.likes} like${workout.likes == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: RichText(
+              maxLines: _expanded ? null : 2,
+              overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${workout.title}  ',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                  TextSpan(
+                    text: workout.description,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (workout.comments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Text(
+                'View all ${workout.comments.length} comment${workout.comments.length == 1 ? '' : 's'}',
+                style: const TextStyle(color: Colors.white38, fontSize: 13),
+              ),
+            ),
+          if (workout.comments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                '${workout.comments.first.authorUsername}  ${workout.comments.first.message}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ...visiblePills.map((p) => _pillSmall(p.label)),
+                if (hasMore)
+                  GestureDetector(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        _expanded
+                            ? 'Less'
+                            : '+${allPills.length - 3} more',
+                        style: const TextStyle(
+                          color: Color(0xFF9BC4FF),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text(
+              _timeAgo(workout.createdAt),
+              style: const TextStyle(color: Colors.white30, fontSize: 11),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
       ),
     );
   }
+}
+
+class _PillData {
+  final String label;
+  final IconData icon;
+  const _PillData(this.label, this.icon);
+}
+
+Widget _pillSmall(String label) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: Colors.white70,
+        fontWeight: FontWeight.w600,
+        fontSize: 11,
+      ),
+    ),
+  );
 }
 
 class _PublishWorkoutSheet extends StatefulWidget {
@@ -1011,72 +1076,11 @@ class _PublishWorkoutSheetState extends State<_PublishWorkoutSheet> {
   }
 }
 
-class _CreatorProfileHeader extends StatelessWidget {
-  const _CreatorProfileHeader({required this.stats});
-
-  final CreatorCommunityStats stats;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '@${stats.username}',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _pill('Workouts ${stats.totalPublished}', Icons.grid_view_rounded),
-              _pill('Followers ${stats.followers}', Icons.groups_rounded),
-              _pill('Downloads ${stats.totalDownloads}', Icons.download_rounded),
-              _pill('Likes ${stats.likesReceived}', Icons.favorite_rounded),
-              _pill('5★ ${stats.fiveStarRatings}', Icons.star_rounded),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-Widget _pill(String label, IconData icon) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.09),
-      border: Border.all(color: Colors.white24),
-      borderRadius: BorderRadius.circular(30),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 15, color: Colors.white),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      ],
-    ),
-  );
-}
-
-Widget _metric(String icon, String value) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: Colors.white24),
-    ),
-    child: Text('$icon $value', style: const TextStyle(color: Colors.white70)),
-  );
+String _timeAgo(DateTime date) {
+  final diff = DateTime.now().difference(date);
+  if (diff.inSeconds < 60) return 'Just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  return '${(diff.inDays / 7).floor()}w ago';
 }

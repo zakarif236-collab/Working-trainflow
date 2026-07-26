@@ -1,0 +1,392 @@
+# Review package: b41669f..a6df185
+
+## Commits
+a6df185 feat(builder): replace circular countdown hero with GIF hero layout
+
+## Files changed
+ lib/pages/workout_builder_player_page.dart | 279 ++++-------------------------
+ 1 file changed, 36 insertions(+), 243 deletions(-)
+
+## Diff
+diff --git a/lib/pages/workout_builder_player_page.dart b/lib/pages/workout_builder_player_page.dart
+index 91bf38a..9845f9f 100644
+--- a/lib/pages/workout_builder_player_page.dart
++++ b/lib/pages/workout_builder_player_page.dart
+@@ -326,28 +326,20 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
+     final beforeCurrent = _timeline
+         .take(_phaseIndex.clamp(0, _timeline.length))
+         .fold<int>(0, (sum, phase) => sum + phase.durationSeconds);
+ 
+     final currentElapsed =
+         (_currentPhase.durationSeconds - _remainingSeconds).clamp(0, _currentPhase.durationSeconds);
+ 
+     return beforeCurrent + currentElapsed;
+   }
+ 
+-  double get _phaseProgress {
+-    final total = _currentPhase.durationSeconds;
+-    if (total <= 0) {
+-      return 1;
+-    }
+-    return ((total - _remainingSeconds) / total).clamp(0, 1);
+-  }
+-
+   double get _totalProgress {
+     final total = _totalSeconds;
+     if (total <= 0) {
+       return 0;
+     }
+     return (_elapsedSeconds / total).clamp(0, 1);
+   }
+ 
+   void _start() {
+     if (_timeline.isEmpty) {
+@@ -603,56 +595,71 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
+                           ),
+                         ),
+                       ],
+                     ),
+                   ),
+                   Expanded(
+                     child: ListView(
+                       padding: const EdgeInsets.symmetric(horizontal: 18),
+                       children: [
+                         const SizedBox(height: 8),
+-                        _BuilderHeroSessionCard(
+-                          phase: current,
++                        _ExerciseHeroCard(
++                          mediaPath: current.type == _BuilderPhaseType.work
++                              ? current.exercise.mediaPath
++                              : '',
++                          remainingSeconds: _remainingSeconds,
++                          phaseLabel: current.label,
++                          isRestPhase: current.type == _BuilderPhaseType.rest,
+                           palette: palette,
+-                          isRunning: _isRunning,
+-                          countdown: ScaleTransition(
+-                            scale: _pulseController,
+-                            child: CircularCountdown(
+-                              progress: _phaseProgress,
+-                              seconds: _remainingSeconds,
+-                              phaseLabel: current.label,
+-                              subtitle: '${_remainingSeconds}s',
+-                              gradient: [palette.first, palette.last],
+-                            ),
++                          phaseBadge: PhaseBadge(
++                            icon: current.type == _BuilderPhaseType.rest
++                                ? Icons.pause_rounded
++                                : Icons.fitness_center_rounded,
++                            label: current.type == _BuilderPhaseType.rest
++                                ? 'REST'
++                                : 'WORK',
++                            accent: current.type == _BuilderPhaseType.rest
++                                ? const Color(0xFF60A5FA)
++                                : const Color(0xFF22C55E),
+                           ),
+                         ),
+                         const SizedBox(height: 12),
+                         _BuilderActionControls(
+                           running: _isRunning,
+                           complete: _isComplete,
+                           onStartPause: _isRunning ? _pause : _start,
+                           onReset: _stopAndReset,
+                           onSkip: _skip,
+                         ),
+                         const SizedBox(height: 12),
+                         if (!_isComplete)
+                           NextPhaseCard(phase: _toWorkoutPhase(nextPhase)),
+                         const SizedBox(height: 12),
+-                        if (!_isComplete)
+-                          current.type == _BuilderPhaseType.rest
+-                              ? const _RestPhaseMessageCard(
+-                                  message:
+-                                      'Take a deep breath. Recover and get ready for the next push.',
+-                                )
+-                              : _ExerciseMediaPreview(
+-                                  path: current.exercise.mediaPath,
+-                                ),
++                        if (!_isComplete) ...[
++                          Text(
++                            current.label,
++                            style: const TextStyle(
++                              color: Colors.white,
++                              fontSize: 18,
++                              fontWeight: FontWeight.w800,
++                              letterSpacing: 0.2,
++                            ),
++                          ),
++                          const SizedBox(height: 4),
++                          Text(
++                            'Next: ${nextPhase.label} (${nextPhase.durationSeconds}s)',
++                            style: TextStyle(
++                              color: Colors.white.withValues(alpha: 0.54),
++                              fontSize: 14,
++                            ),
++                          ),
++                        ],
+                         const SizedBox(height: 12),
+                         ProgressHeader(
+                           progress: _totalProgress,
+                           elapsed: _elapsedSeconds,
+                           total: _totalSeconds,
+                         ),
+                         const SizedBox(height: 12),
+                         WorkoutTimeline(
+                           timeline: _timeline.map(_toWorkoutPhase).toList(),
+                           currentIndex: _phaseIndex,
+@@ -665,150 +672,20 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
+                 ],
+               ),
+             ),
+           ],
+         ),
+       ),
+     );
+   }
+ }
+ 
+-class _BuilderHeroSessionCard extends StatelessWidget {
+-  const _BuilderHeroSessionCard({
+-    required this.phase,
+-    required this.palette,
+-    required this.isRunning,
+-    required this.countdown,
+-  });
+-
+-  final _BuilderPhase phase;
+-  final List<Color> palette;
+-  final bool isRunning;
+-  final Widget countdown;
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    final accent = phase.type == _BuilderPhaseType.work
+-        ? const Color(0xFFFF5A5F)
+-        : phase.type == _BuilderPhaseType.rest
+-            ? const Color(0xFF2AB7CA)
+-            : const Color(0xFF666666);
+-
+-    return Container(
+-      width: double.infinity,
+-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+-      decoration: BoxDecoration(
+-        color: Colors.white.withValues(alpha: 0.06),
+-        borderRadius: BorderRadius.circular(36),
+-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+-        boxShadow: [
+-          BoxShadow(
+-            color: palette.first.withValues(alpha: 0.12),
+-            blurRadius: 40,
+-            spreadRadius: -4,
+-            offset: const Offset(0, 8),
+-          ),
+-          BoxShadow(
+-            color: Colors.black.withValues(alpha: 0.25),
+-            blurRadius: 24,
+-            spreadRadius: -6,
+-            offset: const Offset(0, 12),
+-          ),
+-        ],
+-      ),
+-      child: Column(
+-        children: [
+-          Align(
+-            alignment: Alignment.centerRight,
+-            child: Container(
+-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+-              decoration: BoxDecoration(
+-                color: isRunning
+-                    ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+-                    : Colors.white.withValues(alpha: 0.06),
+-                borderRadius: BorderRadius.circular(999),
+-                border: Border.all(
+-                  color: isRunning
+-                      ? const Color(0xFF22C55E).withValues(alpha: 0.30)
+-                      : Colors.white.withValues(alpha: 0.10),
+-                ),
+-              ),
+-              child: Row(
+-                mainAxisSize: MainAxisSize.min,
+-                children: [
+-                  Container(
+-                    width: 7,
+-                    height: 7,
+-                    decoration: BoxDecoration(
+-                      shape: BoxShape.circle,
+-                      color: isRunning
+-                          ? const Color(0xFF22C55E)
+-                          : Colors.white54,
+-                      boxShadow: isRunning
+-                          ? [
+-                              BoxShadow(
+-                                color: const Color(0xFF22C55E)
+-                                    .withValues(alpha: 0.6),
+-                                blurRadius: 6,
+-                              ),
+-                            ]
+-                          : null,
+-                    ),
+-                  ),
+-                  const SizedBox(width: 8),
+-                  Text(
+-                    isRunning ? 'Running' : 'Ready',
+-                    style: TextStyle(
+-                      color: isRunning
+-                          ? const Color(0xFF22C55E)
+-                          : Colors.white70,
+-                      fontSize: 12,
+-                      fontWeight: FontWeight.w700,
+-                      letterSpacing: 0.3,
+-                    ),
+-                  ),
+-                ],
+-              ),
+-            ),
+-          ),
+-          const SizedBox(height: 12),
+-          ConstrainedBox(
+-            constraints: const BoxConstraints(maxWidth: 360),
+-            child: AspectRatio(
+-              aspectRatio: 1,
+-              child: countdown,
+-            ),
+-          ),
+-          const SizedBox(height: 18),
+-          Row(
+-            children: [
+-              PhaseBadge(
+-                icon: phase.type == _BuilderPhaseType.work
+-                    ? Icons.local_fire_department_rounded
+-                    : Icons.self_improvement_rounded,
+-                label: phase.label,
+-                accent: accent,
+-              ),
+-              const SizedBox(width: 8),
+-              PhaseBadge(
+-                icon: Icons.timer_rounded,
+-                label: '${phase.durationSeconds}s',
+-                accent: palette.last,
+-              ),
+-            ],
+-          ),
+-        ],
+-      ),
+-    );
+-  }
+-}
+-
+ class _BuilderActionControls extends StatelessWidget {
+   const _BuilderActionControls({
+     required this.running,
+     required this.complete,
+     required this.onStartPause,
+     required this.onReset,
+     required this.onSkip,
+   });
+ 
+   final bool running;
+@@ -855,104 +732,20 @@ class _BuilderActionControls extends StatelessWidget {
+             ),
+             const SizedBox(width: 12),
+             const Expanded(child: SizedBox.shrink()),
+           ],
+         ),
+       ],
+     );
+   }
+ }
+ 
+-class _ExerciseMediaPreview extends StatelessWidget {
+-  const _ExerciseMediaPreview({required this.path});
+-
+-  final String path;
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    final cleaned = path.trim();
+-    if (cleaned.isEmpty) {
+-      return Container(
+-        height: 170,
+-        alignment: Alignment.center,
+-        decoration: BoxDecoration(
+-          borderRadius: BorderRadius.circular(14),
+-          color: Colors.white.withValues(alpha: 0.04),
+-          border: Border.all(color: Colors.white24),
+-        ),
+-        child: const Text(
+-          'No GIF/image for this exercise',
+-          style: TextStyle(color: Colors.white70),
+-        ),
+-      );
+-    }
+-
+-    return ClipRRect(
+-      borderRadius: BorderRadius.circular(14),
+-      child: Image.file(
+-        File(cleaned),
+-        height: 220,
+-        width: double.infinity,
+-        fit: BoxFit.cover,
+-        errorBuilder: (_, _, _) {
+-          return Container(
+-            height: 170,
+-            alignment: Alignment.center,
+-            color: Colors.black26,
+-            child: const Text(
+-              'Could not load media preview',
+-              style: TextStyle(color: Colors.white70),
+-            ),
+-          );
+-        },
+-      ),
+-    );
+-  }
+-}
+-
+-class _RestPhaseMessageCard extends StatelessWidget {
+-  const _RestPhaseMessageCard({required this.message});
+-
+-  final String message;
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    return Container(
+-      height: 170,
+-      alignment: Alignment.center,
+-      padding: const EdgeInsets.symmetric(horizontal: 16),
+-      decoration: BoxDecoration(
+-        borderRadius: BorderRadius.circular(14),
+-        color: const Color(0xFFB8FFE4).withValues(alpha: 0.12),
+-        border: Border.all(color: const Color(0xFF7FE6BB).withValues(alpha: 0.7)),
+-      ),
+-      child: Column(
+-        mainAxisAlignment: MainAxisAlignment.center,
+-        children: [
+-          const Icon(Icons.self_improvement_rounded, size: 34, color: Color(0xFF7FE6BB)),
+-          const SizedBox(height: 10),
+-          Text(
+-            message,
+-            textAlign: TextAlign.center,
+-            style: const TextStyle(
+-              color: Colors.white,
+-              fontSize: 16,
+-              fontWeight: FontWeight.w700,
+-              height: 1.35,
+-            ),
+-          ),
+-        ],
+-      ),
+-    );
+-  }
+-}
+-
+ class _ExerciseHeroCard extends StatelessWidget {
+   const _ExerciseHeroCard({
+     required this.mediaPath,
+     required this.remainingSeconds,
+     required this.phaseLabel,
+     required this.isRestPhase,
+     required this.palette,
+     required this.phaseBadge,
+   });
+ 

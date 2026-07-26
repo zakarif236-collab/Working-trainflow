@@ -238,127 +238,151 @@ class ActionControls extends StatelessWidget {
     return Column(
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: ControlButton(
-                label: running ? 'Pause' : complete ? 'Restart' : 'Start',
-                icon: running ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                primary: true,
-                onPressed: onStartPause,
-              ),
+            _SecondaryButton(
+              icon: Icons.replay_rounded,
+              label: 'Reset',
+              onPressed: onReset,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ControlButton(
-                label: 'Skip',
-                icon: Icons.skip_next_rounded,
-                primary: false,
-                onPressed: onSkip,
-              ),
+            const SizedBox(width: 20),
+            _PrimaryPlayButton(
+              running: running,
+              complete: complete,
+              onPressed: onStartPause,
+            ),
+            const SizedBox(width: 20),
+            _SecondaryButton(
+              icon: Icons.skip_next_rounded,
+              label: 'Skip',
+              onPressed: onSkip,
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: ControlButton(
-                label: 'Reset',
-                icon: Icons.replay_rounded,
-                primary: false,
-                onPressed: onReset,
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: onMusicToggle,
+            style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              foregroundColor: isMusicPlaying
+                  ? const Color(0xFFFF8A1E)
+                  : Colors.white70,
+              backgroundColor: isMusicPlaying
+                  ? const Color(0xFFFF8A1E).withValues(alpha: 0.1)
+                  : Colors.white.withValues(alpha: 0.06),
+              side: BorderSide(
+                color: isMusicPlaying
+                    ? const Color(0xFFFF8A1E).withValues(alpha: 0.3)
+                    : Colors.white.withValues(alpha: 0.12),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            icon: Icon(
+              isMusicPlaying ? Icons.music_note_rounded : Icons.music_off_rounded,
+              size: 20,
+            ),
+            label: Text(
+              isMusicPlaying ? 'Music Playing' : 'Play Music',
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                letterSpacing: 0.2,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ControlButton(
-                label: isMusicPlaying ? 'Pause Music' : 'Play Music',
-                icon: isMusicPlaying
-                    ? Icons.music_off_rounded
-                    : Icons.music_note_rounded,
-                primary: false,
-                onPressed: onMusicToggle,
-              ),
-            ),
-          ],
+          ),
         ),
       ],
     );
   }
 }
 
-class ControlButton extends StatelessWidget {
-  const ControlButton({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.primary,
+class _PrimaryPlayButton extends StatelessWidget {
+  const _PrimaryPlayButton({
+    required this.running,
+    required this.complete,
     required this.onPressed,
   });
 
-  final String label;
-  final IconData icon;
-  final bool primary;
+  final bool running;
+  final bool complete;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 68,
-      child: primary
-          ? Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFF8A1E), Color(0xFFFF6B1E)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF8A1E).withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: FilledButton.icon(
-                onPressed: onPressed,
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: Colors.white,
-                  shadowColor: Colors.transparent,
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                icon: Icon(icon),
-                label: Text(label),
-              ),
-            )
-          : OutlinedButton.icon(
-              onPressed: onPressed,
-              style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                foregroundColor: Colors.white,
-                backgroundColor: Colors.white.withValues(alpha: 0.06),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              icon: Icon(icon),
-              label: Text(label),
+    return GestureDetector(
+      onTap: onPressed,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF8A1E), Color(0xFFFF6B1E)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF8A1E).withValues(alpha: 0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
+          ],
+        ),
+        child: Icon(
+          running ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          color: Colors.white,
+          size: 40,
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryButton extends StatelessWidget {
+  const _SecondaryButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.08),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Icon(icon, color: Colors.white70, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

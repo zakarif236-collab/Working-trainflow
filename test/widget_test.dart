@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:my_app/main.dart';
+import 'package:my_app/services/auth_service.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(430, 1200));
+    tester.binding.setSurfaceSize(const Size(430, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(MyApp(authService: AuthService()));
     await tester.pumpAndSettle();
   }
 
@@ -35,14 +36,11 @@ void main() {
     expect(finder, findsOneWidget);
   }
 
-  testWidgets('Workout timer opens from timer button', (WidgetTester tester) async {
+  testWidgets('Workout timer is shown by default on home tab', (WidgetTester tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Timer'));
-    await tester.pumpAndSettle();
-
     expect(find.text('Session Builder'), findsOneWidget);
-    expect(find.text('Music'), findsOneWidget);
+    expect(find.text('Music'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

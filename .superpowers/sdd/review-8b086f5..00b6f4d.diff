@@ -1,0 +1,285 @@
+# Review package: 8b086f5..00b6f4d
+
+## Commits
+00b6f4d feat(builder): add _InfoCard and _ControlBar widgets
+7b7f4e4 fix(builder): correct glassmorphism alpha values and background icon
+
+## Files changed
+ lib/pages/workout_builder_player_page.dart | 216 ++++++++++++++++++++++++++++-
+ 1 file changed, 211 insertions(+), 5 deletions(-)
+
+## Diff
+diff --git a/lib/pages/workout_builder_player_page.dart b/lib/pages/workout_builder_player_page.dart
+index 2038d9d..0d5cec8 100644
+--- a/lib/pages/workout_builder_player_page.dart
++++ b/lib/pages/workout_builder_player_page.dart
+@@ -806,23 +806,23 @@ class _ExerciseHeroCard extends StatelessWidget {
+       decoration: BoxDecoration(
+         gradient: LinearGradient(
+           begin: Alignment.topLeft,
+           end: Alignment.bottomRight,
+           colors: [palette[0], const Color(0xFF0D121C), palette[1]],
+           stops: const [0.0, 0.45, 1.0],
+         ),
+       ),
+       child: Center(
+         child: Icon(
+-          isRestPhase ? Icons.self_improvement_rounded : Icons.fitness_center_rounded,
+-          color: Colors.white.withValues(alpha: 0.12),
+-          size: 80,
++          Icons.self_improvement_rounded,
++          color: Colors.white.withValues(alpha: 0.2),
++          size: 64,
+         ),
+       ),
+     );
+   }
+ }
+ 
+ class _TimerOverlay extends StatelessWidget {
+   const _TimerOverlay({
+     required this.remainingSeconds,
+     required this.progress,
+@@ -837,23 +837,23 @@ class _TimerOverlay extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+     return ClipRRect(
+       borderRadius: BorderRadius.circular(24),
+       child: BackdropFilter(
+         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+         child: Container(
+           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+           decoration: BoxDecoration(
+-            color: Colors.white.withValues(alpha: 0.08),
++            color: Colors.white.withValues(alpha: 0.06),
+             borderRadius: BorderRadius.circular(24),
+-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
++            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+           ),
+           child: Column(
+             mainAxisSize: MainAxisSize.min,
+             children: [
+               Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                 decoration: BoxDecoration(
+                   color: accentColor.withValues(alpha: 0.2),
+                   borderRadius: BorderRadius.circular(999),
+                   border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+@@ -925,10 +925,216 @@ class _TimerOverlay extends StatelessWidget {
+       ),
+     );
+   }
+ 
+   static String _formatTime(int seconds) {
+     final m = seconds ~/ 60;
+     final s = seconds % 60;
+     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+   }
+ }
++
++class _InfoColumn extends StatelessWidget {
++  const _InfoColumn({
++    required this.icon,
++    required this.label,
++    required this.value,
++    required this.accent,
++  });
++
++  final IconData icon;
++  final String label;
++  final String value;
++  final Color accent;
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      mainAxisSize: MainAxisSize.min,
++      children: [
++        Icon(icon, color: accent, size: 20),
++        const SizedBox(height: 6),
++        Text(
++          label,
++          style: TextStyle(
++            color: Colors.white.withValues(alpha: 0.5),
++            fontSize: 11,
++            fontWeight: FontWeight.w600,
++            letterSpacing: 0.3,
++          ),
++        ),
++        const SizedBox(height: 2),
++        Text(
++          value,
++          style: const TextStyle(
++            color: Colors.white,
++            fontSize: 13,
++            fontWeight: FontWeight.w700,
++          ),
++          textAlign: TextAlign.center,
++        ),
++      ],
++    );
++  }
++}
++
++class _InfoCard extends StatelessWidget {
++  const _InfoCard({
++    required this.nextLabel,
++    required this.nextDuration,
++    required this.remainingSeconds,
++  });
++
++  final String nextLabel;
++  final int nextDuration;
++  final int remainingSeconds;
++
++  @override
++  Widget build(BuildContext context) {
++    return Container(
++      padding: const EdgeInsets.all(16),
++      decoration: BoxDecoration(
++        color: Colors.white.withValues(alpha: 0.06),
++        borderRadius: BorderRadius.circular(20),
++        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
++        boxShadow: const [
++          BoxShadow(color: Colors.black26, blurRadius: 16, offset: Offset(0, 4)),
++        ],
++      ),
++      child: Row(
++        children: [
++          Expanded(
++            child: _InfoColumn(
++              icon: Icons.local_fire_department_rounded,
++              label: 'Next',
++              value: '$nextLabel (${nextDuration}s)',
++              accent: const Color(0xFFFF8A1E),
++            ),
++          ),
++          Container(
++            width: 1,
++            height: 40,
++            color: Colors.white.withValues(alpha: 0.1),
++          ),
++          Expanded(
++            child: _InfoColumn(
++              icon: Icons.timer_rounded,
++              label: 'Remaining',
++              value: '$remainingSeconds seconds',
++              accent: const Color(0xFF60A5FA),
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++}
++
++class _ControlBar extends StatelessWidget {
++  const _ControlBar({
++    required this.running,
++    required this.complete,
++    required this.palette,
++    required this.onStartPause,
++    required this.onReset,
++    required this.onSkip,
++  });
++
++  final bool running;
++  final bool complete;
++  final List<Color> palette;
++  final VoidCallback onStartPause;
++  final VoidCallback onReset;
++  final VoidCallback onSkip;
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      children: [
++        SizedBox(
++          width: double.infinity,
++          height: 56,
++          child: Container(
++            decoration: BoxDecoration(
++              gradient: LinearGradient(colors: [palette[0], palette[1]]),
++              borderRadius: BorderRadius.circular(16),
++              boxShadow: [
++                BoxShadow(
++                  color: palette.first.withValues(alpha: 0.4),
++                  blurRadius: 16,
++                  offset: const Offset(0, 6),
++                ),
++              ],
++            ),
++            child: FilledButton.icon(
++              onPressed: onStartPause,
++              style: FilledButton.styleFrom(
++                shape: RoundedRectangleBorder(
++                  borderRadius: BorderRadius.circular(16),
++                ),
++                backgroundColor: Colors.transparent,
++                foregroundColor: Colors.white,
++                shadowColor: Colors.transparent,
++                textStyle: const TextStyle(
++                  fontSize: 16,
++                  fontWeight: FontWeight.w800,
++                ),
++              ),
++              icon: Icon(running ? Icons.pause_rounded : Icons.play_arrow_rounded),
++              label: Text(running ? 'Pause' : complete ? 'Restart' : 'Start'),
++            ),
++          ),
++        ),
++        const SizedBox(height: 12),
++        Row(
++          children: [
++            Expanded(
++              child: SizedBox(
++                height: 48,
++                child: OutlinedButton.icon(
++                  onPressed: onSkip,
++                  style: OutlinedButton.styleFrom(
++                    shape: RoundedRectangleBorder(
++                      borderRadius: BorderRadius.circular(14),
++                    ),
++                    foregroundColor: Colors.white,
++                    backgroundColor: Colors.white.withValues(alpha: 0.06),
++                    side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
++                    textStyle: const TextStyle(
++                      fontSize: 14,
++                      fontWeight: FontWeight.w700,
++                    ),
++                  ),
++                  icon: const Icon(Icons.skip_next_rounded, size: 18),
++                  label: const Text('Skip'),
++                ),
++              ),
++            ),
++            const SizedBox(width: 12),
++            Expanded(
++              child: SizedBox(
++                height: 48,
++                child: OutlinedButton.icon(
++                  onPressed: onReset,
++                  style: OutlinedButton.styleFrom(
++                    shape: RoundedRectangleBorder(
++                      borderRadius: BorderRadius.circular(14),
++                    ),
++                    foregroundColor: Colors.white,
++                    backgroundColor: Colors.white.withValues(alpha: 0.06),
++                    side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
++                    textStyle: const TextStyle(
++                      fontSize: 14,
++                      fontWeight: FontWeight.w700,
++                    ),
++                  ),
++                  icon: const Icon(Icons.replay_rounded, size: 18),
++                  label: const Text('Reset'),
++                ),
++              ),
++            ),
++          ],
++        ),
++      ],
++    );
++  }
++}

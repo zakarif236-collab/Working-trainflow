@@ -3,7 +3,9 @@ import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/services/settings_service.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.onStartTraining});
+
+  final ValueChanged<WorkoutConfig>? onStartTraining;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -59,7 +61,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openTrainingLauncher(BuildContext context) async {
-    final navigator = Navigator.of(context);
     final selectedMode = await showModalBottomSheet<_TrainingMode>(
       context: context,
       isScrollControlled: true,
@@ -75,10 +76,14 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    await navigator.pushNamed(
-      '/workout',
-      arguments: _presetForMode(selectedMode),
-    );
+    final config = _presetForMode(selectedMode);
+    if (widget.onStartTraining != null) {
+      widget.onStartTraining!(config);
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).pushNamed('/workout', arguments: config);
+    if (!mounted) return;
     await _refreshResumeSession();
   }
 
@@ -133,55 +138,84 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            child: Column(
-              children: [
-                const Spacer(flex: 5),
-                _HomeActionButton(
-                  label: 'Quick Start',
-                  icon: Icons.play_circle_fill_rounded,
-                  backgroundColor: const Color(0xFFF2A6A6),
-                  foregroundColor: const Color(0xFF2A1A1A),
-                  onPressed: () => _openTrainingLauncher(context),
-                ),
-                const SizedBox(height: 18),
-                _HomeActionButton(
-                  label: 'Workout Builder',
-                  icon: Icons.bolt_rounded,
-                  backgroundColor: const Color(0xFF86E3A4),
-                  foregroundColor: const Color(0xFF102817),
-                  onPressed: () => _openWorkoutBuilder(context),
-                ),
-                const SizedBox(height: 18),
-                _HomeActionButton(
-                  label: 'My Workouts',
-                  icon: Icons.library_books_rounded,
-                  backgroundColor: const Color(0xFF9BC4FF),
-                  foregroundColor: const Color(0xFF10213D),
-                  onPressed: () => _openMyWorkouts(context),
-                ),
-                const SizedBox(height: 18),
-                _HomeActionButton(
-                  label: 'Community',
-                  icon: Icons.public_rounded,
-                  backgroundColor: const Color(0xFFF5A97D),
-                  foregroundColor: const Color(0xFF361E10),
-                  onPressed: () => _openCommunity(context),
-                ),
-                if (canResume) ...[
-                  const SizedBox(height: 18),
-                  _HomeActionButton(
-                    label: 'Resume Last Workout',
-                    icon: Icons.playlist_play_rounded,
-                    backgroundColor: const Color(0xFFF9C97A),
-                    foregroundColor: const Color(0xFF2D2108),
-                    onPressed: () => _resumeLastWorkout(context),
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Mods',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Train smarter, not harder.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-                const Spacer(flex: 3),
-              ],
-            ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.0,
+                  ),
+                  delegate: SliverChildListDelegate([
+                    _ModCard(
+                      title: 'Quick Start',
+                      subtitle: 'Jump right in',
+                      icon: Icons.play_circle_fill_rounded,
+                      gradient: const [Color(0xFFFF6B8A), Color(0xFFF2A6A6)],
+                      onTap: () => _openTrainingLauncher(context),
+                    ),
+                    _ModCard(
+                      title: 'Workout Builder',
+                      subtitle: 'Create routines',
+                      icon: Icons.bolt_rounded,
+                      gradient: const [Color(0xFF4ADE80), Color(0xFF86E3A4)],
+                      onTap: () => _openWorkoutBuilder(context),
+                    ),
+                    _ModCard(
+                      title: 'My Workouts',
+                      subtitle: 'Your library',
+                      icon: Icons.library_books_rounded,
+                      gradient: const [Color(0xFF60A5FA), Color(0xFF9BC4FF)],
+                      onTap: () => _openMyWorkouts(context),
+                    ),
+                    _ModCard(
+                      title: 'Community',
+                      subtitle: 'Share & discover',
+                      icon: Icons.public_rounded,
+                      gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
+                      onTap: () => _openCommunity(context),
+                    ),
+                    if (canResume)
+                      _ModCard(
+                        title: 'Resume',
+                        subtitle: 'Continue last session',
+                        icon: Icons.playlist_play_rounded,
+                        gradient: const [Color(0xFFFBBF24), Color(0xFFF9C97A)],
+                        onTap: () => _resumeLastWorkout(context),
+                      ),
+                  ]),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -189,41 +223,76 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _HomeActionButton extends StatelessWidget {
-  const _HomeActionButton({
-    required this.label,
+class _ModCard extends StatelessWidget {
+  const _ModCard({
+    required this.title,
+    required this.subtitle,
     required this.icon,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.onPressed,
+    required this.gradient,
+    required this.onTap,
   });
 
-  final String label;
+  final String title;
+  final String subtitle;
   final IconData icon;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final VoidCallback onPressed;
+  final List<Color> gradient;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 24),
-        label: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          child: Text(label),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              gradient[0].withValues(alpha: 0.18),
+              gradient[1].withValues(alpha: 0.08),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: gradient[0].withValues(alpha: 0.25),
+            width: 1,
+          ),
         ),
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(72),
-          backgroundColor: backgroundColor,
-          foregroundColor: foregroundColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          textStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: gradient,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
         ),
       ),

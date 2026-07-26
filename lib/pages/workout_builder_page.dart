@@ -20,7 +20,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _nameController = TextEditingController();
 
-  List<_WorkoutDraftExercise> _draftExercises = const [_WorkoutDraftExercise()];
+  List<_WorkoutDraftExercise> _draftExercises = [_WorkoutDraftExercise()];
   List<WorkoutBuilderRoutine> _savedRoutines = const [];
   bool _loadingSaved = true;
   String? _editingRoutineId;
@@ -88,7 +88,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
 
   void _addExercise() {
     setState(() {
-      _draftExercises = [..._draftExercises, const _WorkoutDraftExercise()];
+      _draftExercises = [..._draftExercises, _WorkoutDraftExercise()];
     });
   }
 
@@ -146,7 +146,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     setState(() {
       _editingRoutineId = null;
       _nameController.clear();
-      _draftExercises = const [_WorkoutDraftExercise()];
+      _draftExercises = [_WorkoutDraftExercise()];
     });
   }
 
@@ -356,9 +356,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                       itemBuilder: (context, index) {
                         final exercise = _draftExercises[index];
                         return _ExerciseEditorCard(
-                          key: ValueKey(
-                            'draft-${exercise.name}-${exercise.workSeconds}-${exercise.restSeconds}-${exercise.mediaPath}-$index',
-                          ),
+                          key: ValueKey('draft-${exercise.id}'),
                           index: index,
                           exercise: exercise,
                           onChanged: (updated) {
@@ -502,13 +500,15 @@ class _SummaryChip extends StatelessWidget {
 }
 
 class _WorkoutDraftExercise {
-  const _WorkoutDraftExercise({
+  _WorkoutDraftExercise({
+    String? id,
     this.name = 'Exercise',
     this.workSeconds = 40,
     this.restSeconds = 20,
     this.mediaPath = '',
-  });
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
+  final String id;
   final String name;
   final int workSeconds;
   final int restSeconds;
@@ -521,6 +521,7 @@ class _WorkoutDraftExercise {
     String? mediaPath,
   }) {
     return _WorkoutDraftExercise(
+      id: id,
       name: name ?? this.name,
       workSeconds: workSeconds ?? this.workSeconds,
       restSeconds: restSeconds ?? this.restSeconds,
@@ -593,7 +594,7 @@ class _ExerciseEditorCard extends StatelessWidget {
             ),
             TextFormField(
               initialValue: exercise.name,
-              key: ValueKey('exercise-name-$index-${exercise.name}'),
+              key: ValueKey('exercise-name-${exercise.id}'),
               onChanged: (value) => onChanged(exercise.copyWith(name: value)),
               decoration: const InputDecoration(
                 labelText: 'Exercise name',

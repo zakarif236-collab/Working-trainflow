@@ -548,6 +548,7 @@ class CreatorCommunityStats {
     required this.creatorId,
     required this.username,
     required this.profileImagePath,
+    required this.bio,
     required this.totalPublished,
     required this.followers,
     required this.totalDownloads,
@@ -560,6 +561,7 @@ class CreatorCommunityStats {
   final String creatorId;
   final String username;
   final String profileImagePath;
+  final String bio;
   final int totalPublished;
   final int followers;
   final int totalDownloads;
@@ -567,4 +569,84 @@ class CreatorCommunityStats {
   final int likesReceived;
   final int fiveStarRatings;
   final List<String> badges;
+}
+
+enum NotificationType { like, follow, comment, download, achievement }
+
+enum FitnessGoal {
+  buildMuscle,
+  loseWeight,
+  endurance,
+  general;
+
+  String get displayName => switch (this) {
+        FitnessGoal.buildMuscle => 'Build Muscle',
+        FitnessGoal.loseWeight => 'Lose Weight',
+        FitnessGoal.endurance => 'Endurance',
+        FitnessGoal.general => 'General Fitness',
+      };
+}
+
+class AppNotification {
+  AppNotification({
+    required this.id,
+    required this.type,
+    required this.actorUsername,
+    this.actorAvatarPath,
+    this.targetId,
+    this.message,
+    DateTime? createdAt,
+    this.isRead = false,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  final String id;
+  final NotificationType type;
+  final String actorUsername;
+  final String? actorAvatarPath;
+  final String? targetId;
+  final String? message;
+  final DateTime createdAt;
+  final bool isRead;
+
+  AppNotification copyWith({bool? isRead}) {
+    return AppNotification(
+      id: id,
+      type: type,
+      actorUsername: actorUsername,
+      actorAvatarPath: actorAvatarPath,
+      targetId: targetId,
+      message: message,
+      createdAt: createdAt,
+      isRead: isRead ?? this.isRead,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type.name,
+        'actorUsername': actorUsername,
+        'actorAvatarPath': actorAvatarPath ?? '',
+        'targetId': targetId ?? '',
+        'message': message ?? '',
+        'createdAt': createdAt.millisecondsSinceEpoch,
+        'isRead': isRead,
+      };
+
+  static AppNotification fromJson(Map<String, dynamic> json) {
+    return AppNotification(
+      id: json['id'] as String? ?? '',
+      type: NotificationType.values.firstWhere(
+        (e) => e.name == json['type'],
+        orElse: () => NotificationType.achievement,
+      ),
+      actorUsername: json['actorUsername'] as String? ?? 'someone',
+      actorAvatarPath: json['actorAvatarPath'] as String?,
+      targetId: json['targetId'] as String?,
+      message: json['message'] as String?,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      isRead: json['isRead'] as bool? ?? false,
+    );
+  }
 }
