@@ -109,35 +109,50 @@ class _CommunityPageState extends State<CommunityPage>
 
   Future<void> _toggleLike(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
-    final next = await _settingsService.toggleCommunityLike(workout.id);
-    if (!mounted) {
-      return;
-    }
+    // Optimistic local update
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        return w.copyWith(
+          isLiked: !w.isLiked,
+          likes: w.isLiked ? (w.likes - 1).clamp(0, 1 << 30) : w.likes + 1,
+        );
+      }).toList();
     });
+    // Sync to Firestore in background
+    CommunityFirestoreService.instance.toggleLike(workout.id, workout.isLiked);
+    _settingsService.toggleCommunityLike(workout.id);
   }
 
   Future<void> _toggleFavorite(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
-    final next = await _settingsService.toggleCommunityFavorite(workout.id);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        return w.copyWith(
+          isFavorited: !w.isFavorited,
+          favorites: w.isFavorited
+              ? (w.favorites - 1).clamp(0, 1 << 30)
+              : w.favorites + 1,
+        );
+      }).toList();
     });
+    CommunityFirestoreService.instance.toggleFavorite(workout.id, workout.isFavorited);
+    _settingsService.toggleCommunityFavorite(workout.id);
   }
 
   Future<void> _saveToMyWorkouts(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
-    final next = await _settingsService.saveCommunityWorkoutToMyWorkouts(workout.id);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        return w.copyWith(isSaved: !w.isSaved);
+      }).toList();
     });
+    _settingsService.saveCommunityWorkoutToMyWorkouts(workout.id);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -152,13 +167,15 @@ class _CommunityPageState extends State<CommunityPage>
     final shareText =
         'Check out ${workout.title} by @${workout.creatorUsername}: fitpulse://community/${workout.id}';
     await Clipboard.setData(ClipboardData(text: shareText));
-    final next = await _settingsService.incrementCommunityShare(workout.id);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        return w.copyWith(shares: w.shares + 1);
+      }).toList();
     });
+    CommunityFirestoreService.instance.incrementShare(workout.id);
+    _settingsService.incrementCommunityShare(workout.id);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -229,13 +246,22 @@ class _CommunityPageState extends State<CommunityPage>
       return;
     }
 
-    final next = await _settingsService.rateCommunityWorkout(workout.id, selected);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        final previous = w.userRating;
+        return w.copyWith(
+          userRating: selected,
+          ratingsCount: previous == null ? w.ratingsCount + 1 : w.ratingsCount,
+          ratingsTotal: previous == null
+              ? w.ratingsTotal + selected
+              : w.ratingsTotal - previous + selected,
+        );
+      }).toList();
     });
+    CommunityFirestoreService.instance.rateWorkout(workout.id, selected);
+    _settingsService.rateCommunityWorkout(workout.id, selected);
   }
 
   Future<void> _commentWorkout(CommunityWorkout workout) async {
@@ -274,24 +300,34 @@ class _CommunityPageState extends State<CommunityPage>
       return;
     }
 
-    final next = await _settingsService.addCommunityComment(workout.id, text);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
+    final newComment = CommunityComment(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      authorUsername: _authService.currentUserId ?? 'athlete',
+      message: text.trim(),
+      createdAt: DateTime.now(),
+    );
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.id != workout.id) return w;
+        return w.copyWith(comments: [...w.comments, newComment]);
+      }).toList();
     });
+    CommunityFirestoreService.instance.addComment(workout.id, text.trim());
+    _settingsService.addCommunityComment(workout.id, text);
   }
 
   Future<void> _toggleFollowCreator(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
-    final next = await _settingsService.toggleFollowCreator(workout.creatorId);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
-      _workouts = next;
+      _workouts = _workouts.map((w) {
+        if (w.creatorId != workout.creatorId) return w;
+        return w.copyWith(isFollowingCreator: !w.isFollowingCreator);
+      }).toList();
     });
+    CommunityFirestoreService.instance.toggleFollow(workout.creatorId, workout.isFollowingCreator);
+    _settingsService.toggleFollowCreator(workout.creatorId);
   }
 
   Future<void> _openCreatorProfile(CommunityWorkout workout) async {

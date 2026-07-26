@@ -34,10 +34,10 @@ class PushNotificationService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      await _db.collection('users').doc(uid).update({
+      await _db.collection('users').doc(uid).set({
         'fcmToken': token,
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
     } catch (_) {}
   }
 
