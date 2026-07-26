@@ -32,6 +32,7 @@ class HomeTimerLayout extends StatelessWidget {
     required this.showCustomizationPanel,
     required this.tempoPanelWidget,
     required this.guideCards,
+    this.musicControls,
   });
 
   final WorkoutPhase phase;
@@ -59,6 +60,7 @@ class HomeTimerLayout extends StatelessWidget {
   final bool showCustomizationPanel;
   final Widget? tempoPanelWidget;
   final List<Widget> guideCards;
+  final Widget? musicControls;
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +211,10 @@ class HomeTimerLayout extends StatelessWidget {
                 onMusicToggle: () {},
                 isMusicPlaying: false,
               ),
+              if (musicControls != null) ...[
+                const SizedBox(height: 12),
+                musicControls!,
+              ],
               const SizedBox(height: 12),
               NextPhaseCard(phase: nextPhase),
               const SizedBox(height: 12),
