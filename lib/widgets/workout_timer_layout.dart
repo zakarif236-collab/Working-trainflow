@@ -36,6 +36,12 @@ class WorkoutTimerLayout extends StatelessWidget {
     this.onResume,
     this.onRestart,
     this.onQuit,
+    this.onMusicToggle,
+    this.isMusicPlaying = false,
+    this.selectedSongTitle,
+    this.loadingSongs = false,
+    this.onMusicPickerTap,
+    this.songName,
   });
 
   final WorkoutPhase phase;
@@ -65,6 +71,12 @@ class WorkoutTimerLayout extends StatelessWidget {
   final VoidCallback? onResume;
   final VoidCallback? onRestart;
   final VoidCallback? onQuit;
+  final VoidCallback? onMusicToggle;
+  final bool isMusicPlaying;
+  final String? selectedSongTitle;
+  final bool loadingSongs;
+  final VoidCallback? onMusicPickerTap;
+  final String? songName;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +146,12 @@ class WorkoutTimerLayout extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onMusicPickerTap != null)
+                _MusicChip(
+                  loading: loadingSongs,
+                  onTap: onMusicPickerTap!,
+                  selectedSongTitle: selectedSongTitle,
+                ),
             ],
           ),
         ),
@@ -153,8 +171,9 @@ class WorkoutTimerLayout extends StatelessWidget {
                 onStartPause: onStartPause,
                 onReset: onReset,
                 onSkip: onSkip,
-                onMusicToggle: () {},
-                isMusicPlaying: false,
+                onMusicToggle: onMusicToggle ?? () {},
+                isMusicPlaying: isMusicPlaying,
+                songName: songName,
               ),
               const SizedBox(height: 12),
               ProgressHeader(
@@ -475,6 +494,52 @@ class _PauseButton extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 fontSize: 15,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MusicChip extends StatelessWidget {
+  const _MusicChip({
+    required this.loading,
+    required this.onTap,
+    required this.selectedSongTitle,
+  });
+
+  final bool loading;
+  final VoidCallback onTap;
+  final String? selectedSongTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: loading ? null : onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(Icons.library_music_rounded, color: Colors.white70),
+            const SizedBox(width: 8),
+            Text(
+              selectedSongTitle == null ? 'Music' : 'Track set',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
             ),
           ],
         ),

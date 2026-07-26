@@ -223,6 +223,7 @@ class ActionControls extends StatelessWidget {
     required this.onSkip,
     required this.onMusicToggle,
     required this.isMusicPlaying,
+    this.songName,
   });
 
   final bool running;
@@ -232,6 +233,7 @@ class ActionControls extends StatelessWidget {
   final VoidCallback onSkip;
   final VoidCallback onMusicToggle;
   final bool isMusicPlaying;
+  final String? songName;
 
   @override
   Widget build(BuildContext context) {
@@ -282,11 +284,13 @@ class ActionControls extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
             icon: Icon(
-              isMusicPlaying ? Icons.music_note_rounded : Icons.music_off_rounded,
+              isMusicPlaying ? Icons.stop_rounded : Icons.music_off_rounded,
               size: 20,
             ),
             label: Text(
-              isMusicPlaying ? 'Music Playing' : 'Play Music',
+              isMusicPlaying
+                  ? (songName != null ? 'Stop  ${songName!}' : 'Music Playing')
+                  : 'Play Music',
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
