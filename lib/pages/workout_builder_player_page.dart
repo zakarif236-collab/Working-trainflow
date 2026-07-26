@@ -1,15 +1,19 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:my_app/models/workout_fingerprint.dart';
 import 'package:my_app/models/workout_models.dart';
-import 'package:my_app/services/cue_service.dart';
+import 'package:my_app/services/audio_engine.dart';
+import 'package:my_app/pages/audio_settings_page.dart';
+import 'package:my_app/services/gemini_voice_service.dart';
 import 'package:my_app/services/settings_service.dart';
-
+import 'package:my_app/services/sfx_service.dart';
+import 'package:my_app/widgets/countdown_bar.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
 import 'package:my_app/widgets/workout_timeline.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 enum _BuilderPhaseType { work, rest, complete }
 
@@ -37,7 +41,7 @@ class WorkoutBuilderPlayerPage extends StatefulWidget {
 }
 
 class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
-  final CueService _cueService = CueService();
+  late AudioEngine _audioEngine;
   final SettingsService _settingsService = SettingsService();
 
   WorkoutBuilderRoutine? _routine;
@@ -54,10 +58,15 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   bool _didAnnounceCompletion = false;
   int _lastObservedPhaseIndex = -1;
   int _lastAnnouncedSeconds = -1;
+  List<String> _exerciseNames = [];
 
   @override
   void initState() {
     super.initState();
+    _audioEngine = AudioEngine(
+      voice: GeminiVoiceService(),
+      sfx: SfxService(),
+    );
     _initializeCueSettings();
   }
 
@@ -99,17 +108,36 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
         _remainingSeconds = currentDuration;
       }
     }
+
+    _exerciseNames = _buildExerciseNames();
+    if (_exerciseNames.isNotEmpty) {
+      final workDurations = routine.exercises.map((e) => e.workSeconds).toList();
+      final restDurations = routine.exercises.map((e) => e.restSeconds).toList();
+      final fingerprint = WorkoutFingerprint(
+        workoutId: routine.id,
+        exerciseNames: _exerciseNames,
+        exerciseDurations: workDurations,
+        restDurations: restDurations,
+        recoveryDurations: List.filled(routine.exercises.length, 0),
+      );
+      unawaited(_audioEngine.generateWorkoutVoice(
+        fingerprint: fingerprint,
+        exerciseNames: _exerciseNames,
+        workoutName: routine.name,
+      ));
+    }
   }
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _ticker?.cancel();
     if (_isComplete || !_hasProgressToResume) {
       unawaited(_settingsService.clearWorkoutBuilderResumeSession());
     } else {
       unawaited(_persistResumeSnapshot());
     }
-    _cueService.dispose();
+    _audioEngine.dispose();
     super.dispose();
   }
 
@@ -142,18 +170,16 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
 
   Future<void> _initializeCueSettings() async {
     try {
+      await _audioEngine.initialize();
+
       final settings = await _settingsService.load();
-      await _cueService.updateSettings(
-        volume: settings.voiceCueVolume,
-        speechRate: settings.voiceCueRate,
-      );
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _voiceCueEnabled = _cueService.supportsVoiceCues && settings.voiceCueEnabled;
+        _voiceCueEnabled = settings.voiceCueEnabled;
         _hapticCueEnabled = settings.hapticCueEnabled;
       });
     } catch (_) {
@@ -162,6 +188,18 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       }
       _showMessage('Could not load cue settings. Using defaults.');
     }
+  }
+
+  List<String> _buildExerciseNames() {
+    final names = <String>[];
+    for (final phase in _timeline) {
+      if (phase.type == _BuilderPhaseType.work) {
+        if (!names.contains(phase.exercise.name)) {
+          names.add(phase.exercise.name);
+        }
+      }
+    }
+    return names;
   }
 
   String _phaseVoiceCueText(_BuilderPhase phase) {
@@ -178,28 +216,28 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
         if (_hapticCueEnabled) {
           await HapticFeedback.mediumImpact();
         }
-        await _cueService.playPhaseCompletionBeep();
-        if (_voiceCueEnabled) {
-          try {
-            final phase = _currentPhase;
-            if (phase.type == _BuilderPhaseType.rest) {
-              await _cueService.announceRest(shouldSpeak: true);
-            } else {
-              await _cueService.announceExercise(
-                _phaseVoiceCueText(phase),
-                shouldSpeak: true,
-              );
-            }
-          } on CueServiceException catch (e) {
-            _showMessage(e.message);
-          }
+        final phase = _currentPhase;
+        if (phase.type == _BuilderPhaseType.rest) {
+          _audioEngine.announceRest();
+        } else {
+          _audioEngine.onExerciseChanged(phase.exerciseIndex);
+          _audioEngine.announceExercise(
+            _phaseVoiceCueText(phase),
+            shouldSpeak: _voiceCueEnabled,
+          );
         }
       }
     }
 
     if (_isRunning && _remainingSeconds != _lastAnnouncedSeconds) {
       _lastAnnouncedSeconds = _remainingSeconds;
-      if (_remainingSeconds > 0 && _remainingSeconds <= 5) {
+
+      if (_remainingSeconds == 0) {
+        if (_hapticCueEnabled) {
+          await HapticFeedback.mediumImpact();
+        }
+        await _audioEngine.playTransitionAtZero();
+      } else if (_remainingSeconds >= 1 && _remainingSeconds <= 5) {
         if (_hapticCueEnabled) {
           if (_remainingSeconds <= 3) {
             await HapticFeedback.lightImpact();
@@ -207,18 +245,10 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
             await HapticFeedback.selectionClick();
           }
         }
-        if (_remainingSeconds == 1) {
-          await _cueService.playCountdownFinalBeep();
-        } else {
-          await _cueService.playCountdownBeep();
+        if (_remainingSeconds <= 3) {
+          await _audioEngine.playCountdownTick(_remainingSeconds);
         }
-        if (_voiceCueEnabled) {
-          try {
-            await _cueService.speakCount(_remainingSeconds, shouldSpeak: true);
-          } on CueServiceException catch (e) {
-            _showMessage(e.message);
-          }
-        }
+        await _audioEngine.speakCount(_remainingSeconds, shouldSpeak: _voiceCueEnabled);
       }
     }
 
@@ -227,19 +257,8 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       if (_hapticCueEnabled) {
         await HapticFeedback.heavyImpact();
       }
-      await _cueService.playWorkoutCompletionBeep();
-      if (_voiceCueEnabled) {
-        try {
-          await _cueService.announceCompletion();
-        } on CueServiceException catch (e) {
-          _showMessage(e.message);
-        }
-      }
+      await _audioEngine.announceCompletion();
       return;
-    }
-
-    if (!_isComplete) {
-      _didAnnounceCompletion = false;
     }
   }
 
@@ -351,6 +370,8 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     setState(() {
       _isRunning = true;
     });
+    WakelockPlus.enable();
+    HapticFeedback.heavyImpact();
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isRunning) {
@@ -377,6 +398,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     setState(() {
       _isRunning = false;
     });
+    WakelockPlus.disable();
     unawaited(_persistResumeSnapshot());
   }
 
@@ -390,6 +412,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       _lastObservedPhaseIndex = -1;
       _didAnnounceCompletion = false;
     });
+    WakelockPlus.disable();
     unawaited(_settingsService.clearWorkoutBuilderResumeSession());
   }
 
@@ -499,147 +522,209 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
             stops: const [0.0, 0.45, 1.0],
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Row(
-                  children: [
-                    if (Navigator.of(context).canPop())
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12),
+        child: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Row(
+                      children: [
+                        if (Navigator.of(context).canPop())
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: IconButton(
+                              onPressed: () {
+                                final navigator = Navigator.of(context);
+                                if (navigator.canPop()) {
+                                  navigator.pop();
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                              ),
                           ),
                         ),
-                        child: IconButton(
-                          onPressed: () {
-                            final navigator = Navigator.of(context);
-                            if (navigator.canPop()) {
-                              navigator.pop();
-                            }
-                          },
-                          icon: const Icon(
-                            Icons.arrow_back_rounded,
-                            color: Colors.white,
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12),
+                            ),
                           ),
-                        ),
-                      ),
-                    if (Navigator.of(context).canPop())
-                      const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            routine.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                          child: IconButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AudioSettingsPage(
+                                    audioEngine: _audioEngine,
+                                    settings: AppSettings.defaults(),
+                                    onSettingsChanged: () {},
+                                    currentFingerprint: _audioEngine.currentFingerprint,
+                                    currentExerciseNames: _exerciseNames,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.tune_rounded,
                               color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 20,
-                              letterSpacing: 0.3,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _phaseHeaderSubtitle(current),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.54),
-                              fontSize: 12,
-                              letterSpacing: 0.3,
-                            ),
+                        ),
+                        if (Navigator.of(context).canPop())
+                          const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                routine.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 20,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _phaseHeaderSubtitle(current),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      children: [
+                        _ExerciseHeroCard(
+                          mediaPath: current.type == _BuilderPhaseType.work
+                              ? current.exercise.mediaPath
+                              : '',
+                          remainingSeconds: _remainingSeconds,
+                          totalSeconds: current.durationSeconds,
+                          phaseLabel: current.label,
+                          isRestPhase: current.type == _BuilderPhaseType.rest,
+                          palette: palette,
+                          elapsedSeconds: _elapsedSeconds,
+                          totalWorkoutSeconds: _totalSeconds,
+                          phaseBadge: PhaseBadge(
+                            icon: current.type == _BuilderPhaseType.rest
+                                ? Icons.pause_rounded
+                                : Icons.fitness_center_rounded,
+                            label: current.type == _BuilderPhaseType.rest
+                                ? 'REST'
+                                : 'WORK',
+                            accent: accentColor,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            value: _totalProgress,
+                            minHeight: 8,
+                            valueColor: AlwaysStoppedAnimation(accentColor),
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Exercise: ${current.label}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                        const SizedBox(height: 16),
+                        if (!_isComplete)
+                          _InfoCard(
+                            nextLabel: nextPhase.label,
+                            nextDuration: nextPhase.durationSeconds,
+                            remainingSeconds: _remainingSeconds,
+                          ),
+                        const SizedBox(height: 20),
+                        _ControlBar(
+                          running: _isRunning,
+                          complete: _isComplete,
+                          palette: palette,
+                          onStartPause: _isRunning ? _pause : (_isComplete ? _stopAndReset : _start),
+                          onReset: _stopAndReset,
+                          onSkip: _skip,
+                        ),
+                        const SizedBox(height: 24),
+                        WorkoutTimeline(
+                          timeline: _timeline.map(_toWorkoutPhase).toList(),
+                          currentIndex: _phaseIndex,
+                          currentRemainingSeconds: _remainingSeconds,
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  children: [
-                    _ExerciseHeroCard(
-                      mediaPath: current.type == _BuilderPhaseType.work
-                          ? current.exercise.mediaPath
-                          : '',
-                      remainingSeconds: _remainingSeconds,
-                      totalSeconds: current.durationSeconds,
-                      phaseLabel: current.label,
-                      isRestPhase: current.type == _BuilderPhaseType.rest,
-                      palette: palette,
-                      phaseBadge: PhaseBadge(
-                        icon: current.type == _BuilderPhaseType.rest
-                            ? Icons.pause_rounded
-                            : Icons.fitness_center_rounded,
-                        label: current.type == _BuilderPhaseType.rest
-                            ? 'REST'
-                            : 'WORK',
-                        accent: accentColor,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(99),
-                      child: LinearProgressIndicator(
-                        value: _totalProgress,
-                        minHeight: 8,
-                        valueColor: AlwaysStoppedAnimation(accentColor),
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Exercise: ${current.label}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      height: 1,
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                    const SizedBox(height: 16),
-                    if (!_isComplete)
-                      _InfoCard(
-                        nextLabel: nextPhase.label,
-                        nextDuration: nextPhase.durationSeconds,
-                        remainingSeconds: _remainingSeconds,
-                      ),
-                    const SizedBox(height: 20),
-                    _ControlBar(
-                      running: _isRunning,
-                      complete: _isComplete,
-                      palette: palette,
-                      onStartPause: _isRunning ? _pause : (_isComplete ? _stopAndReset : _start),
-                      onReset: _stopAndReset,
-                      onSkip: _skip,
-                    ),
-                    const SizedBox(height: 24),
-                    WorkoutTimeline(
-                      timeline: _timeline.map(_toWorkoutPhase).toList(),
-                      currentIndex: _phaseIndex,
-                      currentRemainingSeconds: _remainingSeconds,
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
+            ),
+            if (_isComplete)
+              _BuilderCompletionOverlay(
+                totalSeconds: _totalSeconds,
+                completedExercises: _timeline.where((p) => p.type == _BuilderPhaseType.work).length,
+                routineName: routine.name,
+                onDone: () {
+                  final navigator = Navigator.of(context);
+                  if (navigator.canPop()) {
+                    navigator.pop();
+                  }
+                },
               ),
-            ],
-          ),
+            if (!_isRunning && !_isComplete && _phaseIndex > 0)
+              _BuilderPauseOverlay(
+                onResume: _start,
+                onRestart: _stopAndReset,
+                onQuit: () {
+                  _stopAndReset();
+                  final navigator = Navigator.of(context);
+                  if (navigator.canPop()) {
+                    navigator.pop();
+                  }
+                },
+              ),
+          ],
         ),
       ),
     );
@@ -655,6 +740,8 @@ class _ExerciseHeroCard extends StatelessWidget {
     required this.isRestPhase,
     required this.palette,
     required this.phaseBadge,
+    required this.elapsedSeconds,
+    required this.totalWorkoutSeconds,
   });
 
   final String mediaPath;
@@ -664,14 +751,15 @@ class _ExerciseHeroCard extends StatelessWidget {
   final bool isRestPhase;
   final List<Color> palette;
   final Widget phaseBadge;
+  final int elapsedSeconds;
+  final int totalWorkoutSeconds;
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    final heroHeight = screenHeight * 0.6;
+    final heroHeight = screenHeight * 0.5;
     final hasMedia = !isRestPhase && mediaPath.trim().isNotEmpty;
     final progress = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0.0;
-    final accentColor = isRestPhase ? const Color(0xFF60A5FA) : palette.first;
 
     return SizedBox(
       height: heroHeight,
@@ -706,12 +794,20 @@ class _ExerciseHeroCard extends StatelessWidget {
               right: 16,
               child: phaseBadge,
             ),
-            Center(
-              child: _TimerOverlay(
-                remainingSeconds: remainingSeconds,
-                progress: progress,
-                accentColor: accentColor,
-                phaseLabel: phaseLabel,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: CountdownBar(
+                  progress: progress,
+                  seconds: remainingSeconds,
+                  phaseLabel: phaseLabel,
+                  gradient: palette,
+                  elapsedSeconds: elapsedSeconds,
+                  totalSeconds: totalWorkoutSeconds,
+                ),
               ),
             ),
           ],
@@ -738,117 +834,6 @@ class _ExerciseHeroCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _TimerOverlay extends StatelessWidget {
-  const _TimerOverlay({
-    required this.remainingSeconds,
-    required this.progress,
-    required this.accentColor,
-    required this.phaseLabel,
-  });
-
-  final int remainingSeconds;
-  final double progress;
-  final Color accentColor;
-  final String phaseLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: accentColor.withValues(alpha: 0.4)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: accentColor,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      phaseLabel.toUpperCase(),
-                      style: TextStyle(
-                        color: accentColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: 160,
-                height: 160,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CircularProgressIndicator(
-                      value: 1.0,
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation(
-                        Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation(accentColor),
-                      strokeCap: StrokeCap.round,
-                    ),
-                    Center(
-                      child: Text(
-                        _formatTime(remainingSeconds),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 56,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 2,
-                          shadows: [
-                            Shadow(color: Colors.black87, blurRadius: 12),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _formatTime(int seconds) {
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }
 
@@ -1049,6 +1034,295 @@ class _ControlBar extends StatelessWidget {
                   icon: const Icon(Icons.replay_rounded, size: 18),
                   label: const Text('Reset'),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BuilderCompletionOverlay extends StatelessWidget {
+  const _BuilderCompletionOverlay({
+    required this.totalSeconds,
+    required this.completedExercises,
+    required this.routineName,
+    required this.onDone,
+  });
+
+  final int totalSeconds;
+  final int completedExercises;
+  final String routineName;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMinutes = totalSeconds ~/ 60;
+    final totalSecs = totalSeconds % 60;
+    final estimatedCalories = (totalSeconds * 0.15).round();
+
+    return Container(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF22C55E).withValues(alpha: 0.4),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Workout Complete',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 28,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$totalMinutes min $totalSecs sec',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CompletionStat(
+                      icon: Icons.local_fire_department_rounded,
+                      value: '$estimatedCalories',
+                      label: 'cal',
+                    ),
+                    Container(
+                      width: 1,
+                      height: 32,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                    ),
+                    _CompletionStat(
+                      icon: Icons.fitness_center_rounded,
+                      value: '$completedExercises',
+                      label: 'exercises',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: onDone,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF8A1E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BuilderPauseOverlay extends StatelessWidget {
+  const _BuilderPauseOverlay({
+    required this.onResume,
+    required this.onRestart,
+    required this.onQuit,
+  });
+
+  final VoidCallback onResume;
+  final VoidCallback onRestart;
+  final VoidCallback onQuit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.7),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+              ),
+              child: const Text(
+                'PAUSED',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            _BuilderPauseButton(
+              icon: Icons.play_arrow_rounded,
+              label: 'Resume',
+              onTap: onResume,
+              isPrimary: true,
+            ),
+            const SizedBox(height: 12),
+            _BuilderPauseButton(
+              icon: Icons.replay_rounded,
+              label: 'Restart',
+              onTap: onRestart,
+              isPrimary: false,
+            ),
+            const SizedBox(height: 12),
+            _BuilderPauseButton(
+              icon: Icons.stop_rounded,
+              label: 'Quit',
+              onTap: onQuit,
+              isPrimary: false,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BuilderPauseButton extends StatelessWidget {
+  const _BuilderPauseButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.isPrimary,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 200,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          gradient: isPrimary
+              ? const LinearGradient(
+                  colors: [Color(0xFFFF8A1E), Color(0xFFFF6B1E)],
+                )
+              : null,
+          color: isPrimary ? null : Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isPrimary
+                ? const Color(0xFFFF8A1E).withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionStat extends StatelessWidget {
+  const _CompletionStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFFFF8A1E), size: 20),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
               ),
             ),
           ],

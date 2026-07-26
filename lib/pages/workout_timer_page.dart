@@ -5,14 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:my_app/controllers/workout_controller.dart';
 import 'package:my_app/models/workout_models.dart';
-import 'package:my_app/services/cue_service.dart';
+import 'package:my_app/models/workout_fingerprint.dart';
+import 'package:my_app/services/audio_engine.dart';
+import 'package:my_app/pages/audio_settings_page.dart';
+import 'package:my_app/services/gemini_voice_service.dart';
 import 'package:my_app/services/music_service.dart';
 import 'package:my_app/services/settings_service.dart';
-import 'package:my_app/widgets/circular_countdown.dart';
+import 'package:my_app/services/sfx_service.dart';
+import 'package:my_app/widgets/home_timer_layout.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
-import 'package:my_app/widgets/workout_timeline.dart';
-import 'package:on_audio_query/on_audio_query.dart';
+import 'package:my_app/widgets/workout_timer_layout.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 const List<String> _calisthenicsWarmupMoves = [
   'Jumping jacks - 30s',
@@ -51,10 +55,17 @@ const List<String> _hiitWorkMoves = [
   'Skater jumps',
 ];
 
+enum TimerMode { home, workout }
+
 class WorkoutTimerPage extends StatefulWidget {
-  const WorkoutTimerPage({super.key, this.launchConfig});
+  const WorkoutTimerPage({
+    super.key,
+    this.launchConfig,
+    this.timerMode = TimerMode.home,
+  });
 
   final WorkoutConfig? launchConfig;
+  final TimerMode timerMode;
 
   @override
   State<WorkoutTimerPage> createState() => _WorkoutTimerPageState();
@@ -64,14 +75,12 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     with SingleTickerProviderStateMixin {
   late final WorkoutController _controller;
   late final MusicService _musicService;
-  late final CueService _cueService;
+  late final AudioEngine _audioEngine;
   late final SettingsService _settingsService;
   late final AnimationController _pulseController;
   Timer? _settingsPersistDebounce;
 
   WorkoutIntensity _selectedIntensity = WorkoutConfig.defaults.intensity;
-  List<SongModel> _songs = const [];
-  bool _loadingSongs = false;
   bool _voiceCueEnabled = true;
   bool _hapticCueEnabled = true;
   bool _muteVoiceWhileMusicPlays = true;
@@ -88,17 +97,23 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   List<String> _exerciseVideoAssets = const [];
   String? _activeExerciseMediaPath;
   VideoPlayerController? _exerciseVideoController;
+  String? _nextExerciseMediaPath;
+  VideoPlayerController? _nextExerciseVideoController;
   bool _loadingExerciseMedia = false;
   bool _showCustomizationPanel = false;
+  bool _hasStarted = false;
+  List<String> _exerciseNames = [];
 
   @override
   void initState() {
     super.initState();
     _controller = WorkoutController();
     _musicService = MusicService();
-    _cueService = CueService();
     _settingsService = SettingsService();
-    _voiceCueEnabled = _cueService.supportsVoiceCues;
+    _audioEngine = AudioEngine(
+      voice: GeminiVoiceService(),
+      sfx: SfxService(),
+    );
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -106,10 +121,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       upperBound: 1.03,
     );
 
-    _cueService.updateSettings(
-      volume: _voiceCueVolume,
-      speechRate: _voiceCueRate,
-    );
     _initializeFromSavedSettings();
     _loadExerciseMedia();
 
@@ -118,12 +129,14 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _settingsPersistDebounce?.cancel();
     _controller.removeListener(_watchWorkoutErrors);
     _controller.dispose();
     _pulseController.dispose();
     _disposeExerciseVideoController();
-    _cueService.dispose();
+    _disposeNextExerciseVideoController();
+    _audioEngine.dispose();
     _musicService.dispose();
     super.dispose();
   }
@@ -405,12 +418,45 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
 
     if (_isSupportedVideoAsset(selectedPath)) {
       await _setExerciseVideo(selectedPath);
+    } else {
+      _disposeExerciseVideoController();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+
+    _preloadNextPhaseMedia();
+  }
+
+  Future<void> _preloadNextPhaseMedia() async {
+    if (!mounted) return;
+
+    final nextPhase = _nextPhaseOrCurrent();
+    if (nextPhase.type == WorkoutPhaseType.complete) {
+      _disposeNextExerciseVideoController();
       return;
     }
 
-    _disposeExerciseVideoController();
-    if (mounted) {
-      setState(() {});
+    final nextPath = _pickMediaAssetForPhase(nextPhase);
+    if (nextPath == _nextExerciseMediaPath) return;
+
+    _disposeNextExerciseVideoController();
+    _nextExerciseMediaPath = nextPath;
+
+    if (nextPath != null && _isSupportedVideoAsset(nextPath)) {
+      final controller = VideoPlayerController.asset(nextPath);
+      try {
+        await controller.initialize();
+        await controller.setLooping(true);
+        await controller.setVolume(0);
+        if (mounted) {
+          _nextExerciseVideoController = controller;
+        } else {
+          await controller.dispose();
+        }
+      } catch (_) {
+        await controller.dispose();
+      }
     }
   }
 
@@ -450,6 +496,26 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     controller?.dispose();
   }
 
+  void _disposeNextExerciseVideoController() {
+    final controller = _nextExerciseVideoController;
+    _nextExerciseVideoController = null;
+    _nextExerciseMediaPath = null;
+    controller?.dispose();
+  }
+
+  List<String> _buildExerciseNames() {
+    final names = <String>[];
+    for (final phase in _controller.timeline) {
+      if (phase.type == WorkoutPhaseType.work) {
+        final text = _phaseVoiceCueText(phase);
+        if (text.isNotEmpty && !names.contains(text)) {
+          names.add(text);
+        }
+      }
+    }
+    return names;
+  }
+
   Future<void> _initializeFromSavedSettings() async {
     try {
       final saved = await _settingsService.load();
@@ -458,10 +524,22 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       }
 
       _controller.updateConfig(saved.config);
-      await _cueService.updateSettings(
-        volume: saved.voiceCueVolume,
-        speechRate: saved.voiceCueRate,
-      );
+      await _audioEngine.initialize();
+
+      _exerciseNames = _buildExerciseNames();
+      if (_exerciseNames.isNotEmpty) {
+        final fingerprint = WorkoutFingerprint(
+          workoutId: saved.config.program.name,
+          exerciseNames: _exerciseNames,
+          exerciseDurations: _exerciseNames.map((_) => saved.config.workSeconds).toList(),
+          restDurations: _exerciseNames.map((_) => saved.config.restSeconds).toList(),
+          recoveryDurations: _exerciseNames.map((_) => saved.config.finalRestSeconds).toList(),
+        );
+        unawaited(_audioEngine.generateWorkoutVoice(
+          fingerprint: fingerprint,
+          exerciseNames: _exerciseNames,
+        ));
+      }
 
       if (!mounted) {
         return;
@@ -469,8 +547,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
 
       setState(() {
         _selectedIntensity = saved.config.intensity;
-        _voiceCueEnabled =
-            _cueService.supportsVoiceCues && saved.voiceCueEnabled;
+        _voiceCueEnabled = saved.voiceCueEnabled;
         _hapticCueEnabled = saved.hapticCueEnabled;
         _muteVoiceWhileMusicPlays = saved.muteVoiceWhileMusicPlays;
         _voiceCueVolume = saved.voiceCueVolume;
@@ -520,9 +597,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   Future<void> _handleWorkoutCues() async {
     final phaseIndex = _controller.phaseIndex;
     final remaining = _controller.remainingSeconds;
-    final canSpeak =
-        _voiceCueEnabled &&
-        !(_muteVoiceWhileMusicPlays && _musicService.player.playing);
 
     if (_controller.isRunning && phaseIndex != _lastObservedPhaseIndex) {
       _lastObservedPhaseIndex = phaseIndex;
@@ -533,43 +607,45 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         if (_hapticCueEnabled) {
           await HapticFeedback.mediumImpact();
         }
-        await _cueService.playPhaseCompletionBeep();
-        if (canSpeak) {
-          try {
-            final phase = _controller.currentPhase;
-            if (phase.type == WorkoutPhaseType.rest) {
-              await _cueService.announceRest(shouldSpeak: true);
-            } else {
-              await _cueService.announceExercise(
-                _phaseVoiceCueText(phase),
-                shouldSpeak: true,
-              );
-            }
-          } on CueServiceException catch (e) {
-            _showMessage(e.message);
+        final phase = _controller.currentPhase;
+        int exerciseIndex = 0;
+        for (int i = 0; i < phaseIndex; i++) {
+          if (_controller.timeline[i].type == WorkoutPhaseType.work) {
+            exerciseIndex++;
           }
+        }
+        await _audioEngine.onExerciseChanged(exerciseIndex);
+        if (phase.type == WorkoutPhaseType.rest) {
+          _audioEngine.announceRest();
+        } else {
+          _audioEngine.announceExercise(
+            _phaseVoiceCueText(phase),
+            shouldSpeak: _voiceCueEnabled,
+          );
         }
       }
     }
 
     if (_controller.isRunning && remaining != _lastAnnouncedSeconds) {
       _lastAnnouncedSeconds = remaining;
-      if (remaining > 0 && remaining <= 5) {
+      final canSpeak = _voiceCueEnabled &&
+          !(_muteVoiceWhileMusicPlays && _musicService.player.playing);
+
+      if (remaining == 0) {
+        if (_hapticCueEnabled) {
+          await HapticFeedback.mediumImpact();
+        }
+        await _audioEngine.playTransitionAtZero();
+      } else if (remaining >= 1 && remaining <= 5) {
         if (remaining <= 3 && _hapticCueEnabled) {
           await HapticFeedback.lightImpact();
         } else if (_hapticCueEnabled) {
           await HapticFeedback.selectionClick();
         }
-        if (remaining == 1) {
-          await _cueService.playCountdownFinalBeep();
-        } else {
-          await _cueService.playCountdownBeep();
+        if (remaining <= 3) {
+          await _audioEngine.playCountdownTick(remaining);
         }
-        try {
-          await _cueService.speakCount(remaining, shouldSpeak: canSpeak);
-        } on CueServiceException catch (e) {
-          _showMessage(e.message);
-        }
+        await _audioEngine.speakCount(remaining, shouldSpeak: canSpeak);
       }
     }
 
@@ -592,20 +668,8 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       if (_hapticCueEnabled) {
         await HapticFeedback.heavyImpact();
       }
-      await _cueService.playWorkoutCompletionBeep();
-      if (canSpeak) {
-        try {
-          await _cueService.announceCompletion();
-        } on CueServiceException catch (e) {
-          _showMessage(e.message);
-        }
-      }
+      await _audioEngine.announceCompletion();
       return;
-    }
-
-    if (!_controller.isComplete) {
-      _didAnnounceCompletion = false;
-      _didRecordCompletionStats = false;
     }
   }
 
@@ -662,141 +726,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     });
     _didRecordCompletionStats = false;
     _scheduleSettingsPersist();
-  }
-
-  Future<void> _openMusicPicker() async {
-    setState(() {
-      _loadingSongs = true;
-    });
-
-    try {
-      await _musicService.initialize();
-      final songs = await _musicService.loadSongs();
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _songs = songs;
-      });
-
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF111826),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        builder: (context) {
-          return SafeArea(
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.65,
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(99),
-                      color: Colors.white24,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Select Workout Track',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Pick a local song from your library',
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _songs.length,
-                      separatorBuilder: (_, index) => const Divider(
-                        height: 1,
-                        indent: 56,
-                        color: Colors.white10,
-                      ),
-                      itemBuilder: (context, index) {
-                        final song = _songs[index];
-                        final selected =
-                            _musicService.currentSong?.id == song.id;
-                        return ListTile(
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? const Color(0xFF2AB7CA).withValues(alpha: 0.15)
-                                  : Colors.white.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              selected
-                                  ? Icons.equalizer_rounded
-                                  : Icons.music_note_rounded,
-                              color: selected
-                                  ? const Color(0xFF2AB7CA)
-                                  : Colors.white60,
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: selected ? Colors.white : Colors.white.withValues(alpha: 0.85),
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                            ),
-                          ),
-                          subtitle: Text(
-                            song.artist ?? 'Unknown artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                          onTap: () async {
-                            try {
-                              await _musicService.playSong(song);
-                              if (!context.mounted) {
-                                return;
-                              }
-                              Navigator.pop(context);
-                              _showMessage('Now playing: ${song.title}');
-                              setState(() {});
-                            } on MusicServiceException catch (e) {
-                              _showMessage(e.message);
-                            }
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } on MusicServiceException catch (e) {
-      _showMessage(e.message);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loadingSongs = false;
-        });
-      }
-    }
   }
 
   WorkoutPhase _nextPhaseOrCurrent() {
@@ -1115,319 +1044,390 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
                   child: GlowBlob(color: palette.last.withValues(alpha: 0.45)),
                 ),
                 SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        child: Row(
-                          children: [
-                            if (Navigator.of(context).canPop())
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.12),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.12),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: IconButton(
-                                  onPressed: _goBackToHome,
-                                  icon: const Icon(
-                                    Icons.arrow_back_rounded,
-                                    color: Colors.white,
-                                  ),
-                                  tooltip: 'Back to Home',
-                                ),
-                              ),
-                            if (Navigator.of(context).canPop())
-                              const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Immersive Workout Timer',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 20,
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _phaseHeaderSubtitle(phase),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            _MusicChip(
-                              loading: _loadingSongs,
-                              onTap: _openMusicPicker,
-                              selectedSongTitle:
-                                  _musicService.currentSong?.title,
-                              isPlaying: _musicService.player.playing,
-                              onStop: () async {
-                                try {
-                                  await _musicService.stop();
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                } on MusicServiceException catch (e) {
-                                  _showMessage(e.message);
-                                }
-                              },
-                              onNext: () async {
-                                try {
-                                  await _musicService.next();
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                } on MusicServiceException catch (e) {
-                                  _showMessage(e.message);
-                                }
-                              },
-                              onPrevious: () async {
-                                try {
-                                  await _musicService.previous();
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                } on MusicServiceException catch (e) {
-                                  _showMessage(e.message);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          children: [
-                            _CustomizationToggleCard(
-                              expanded: _showCustomizationPanel,
-                              onTap: () {
-                                setState(() {
-                                  _showCustomizationPanel =
-                                      !_showCustomizationPanel;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            AnimatedCrossFade(
-                              duration: const Duration(milliseconds: 220),
-                              crossFadeState: _showCustomizationPanel
-                                  ? CrossFadeState.showSecond
-                                  : CrossFadeState.showFirst,
-                              firstChild: const SizedBox.shrink(),
-                              secondChild: _ConfigPanel(
-                                config: _controller.config,
-                                selectedIntensity: _selectedIntensity,
-                                onChanged: _updateConfig,
-                                voiceCueEnabled: _voiceCueEnabled,
-                                hapticCueEnabled: _hapticCueEnabled,
-                                onVoiceCueChanged: (value) {
-                                  setState(() {
-                                    _voiceCueEnabled = value;
-                                  });
-                                  if (!value) {
-                                    _cueService.stop();
-                                  }
-                                  _scheduleSettingsPersist();
-                                },
-                                onHapticCueChanged: (value) {
-                                  setState(() {
-                                    _hapticCueEnabled = value;
-                                  });
-                                  _scheduleSettingsPersist();
-                                },
-                                muteVoiceWhileMusicPlays:
-                                    _muteVoiceWhileMusicPlays,
-                                onMuteVoiceWhileMusicChanged: (value) {
-                                  setState(() {
-                                    _muteVoiceWhileMusicPlays = value;
-                                  });
-                                  if (value &&
-                                      _musicService.player.playing) {
-                                    _cueService.stop();
-                                  }
-                                  _scheduleSettingsPersist();
-                                },
-                                voiceCueVolume: _voiceCueVolume,
-                                onVoiceCueVolumeChanged: (value) async {
-                                  setState(() {
-                                    _voiceCueVolume = value;
-                                  });
-                                  try {
-                                    await _cueService.updateSettings(
-                                      volume: value,
-                                    );
-                                  } on CueServiceException catch (e) {
-                                    if (mounted) {
-                                      _showMessage(e.message);
-                                    }
-                                  }
-                                  _scheduleSettingsPersist();
-                                },
-                                voiceCueRate: _voiceCueRate,
-                                onVoiceCueRateChanged: (value) async {
-                                  setState(() {
-                                    _voiceCueRate = value;
-                                  });
-                                  try {
-                                    await _cueService.updateSettings(
-                                      speechRate: value,
-                                    );
-                                  } on CueServiceException catch (e) {
-                                    if (mounted) {
-                                      _showMessage(e.message);
-                                    }
-                                  }
-                                  _scheduleSettingsPersist();
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _HeroSessionCard(
-                              phase: phase,
-                              palette: palette,
-                              isRunning: _controller.isRunning,
-                              countdown: ScaleTransition(
-                                scale: _pulseController,
-                                child: CircularCountdown(
-                                  progress: _controller.phaseProgress,
-                                  seconds: _controller.remainingSeconds,
-                                  phaseLabel: phase.label,
-                                  subtitle: '${_controller.remainingSeconds}s',
-                                  gradient: [palette.first, palette.last],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ActionControls(
-                              running: _controller.isRunning,
-                              complete: _controller.isComplete,
-                              onStartPause: () {
-                                if (_controller.isRunning) {
-                                  _controller.pause();
-                                } else {
-                                  _controller.start();
-                                }
-                              },
-                              onReset: () {
-                                _didRecordCompletionStats = false;
-                                _controller.stop(reset: true);
-                              },
-                              onSkip: _controller.skipPhase,
-                              onMusicToggle: () async {
-                                try {
-                                  await _musicService.togglePlayPause();
-                                  if (_musicService.player.playing) {
-                                    await _applyPhaseMusicProfile(phase);
-                                  }
-                                  if (_muteVoiceWhileMusicPlays &&
-                                      _musicService.player.playing) {
-                                    await _cueService.stop();
-                                  }
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                } on MusicServiceException catch (e) {
-                                  _showMessage(e.message);
-                                }
-                              },
-                              isMusicPlaying: _musicService.player.playing,
-                            ),
-                            const SizedBox(height: 12),
-                            NextPhaseCard(phase: nextPhase),
-                            const SizedBox(height: 12),
-                            _ExerciseMediaPanel(
-                              mediaPath: _activeExerciseMediaPath,
-                              videoController: _exerciseVideoController,
-                              loading: _loadingExerciseMedia,
-                            ),
-                            const SizedBox(height: 12),
-                            _PhaseTempoPanel(
-                              profile: _phaseMusicProfile(phase),
-                              autoProfileEnabled: _autoPhaseMusicProfileEnabled,
-                              isMusicPlaying: _musicService.player.playing,
-                              playbackSpeed: _musicService.playbackSpeed,
-                              onAutoProfileChanged: (value) async {
-                                setState(() {
-                                  _autoPhaseMusicProfileEnabled = value;
-                                });
-                                if (value && _musicService.player.playing) {
-                                  await _applyPhaseMusicProfile(phase);
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            ProgressHeader(
-                              progress: _controller.totalProgress,
-                              elapsed: _controller.elapsedWorkoutSeconds,
-                              total: _controller.totalWorkoutSeconds,
-                            ),
-                            const SizedBox(height: 12),
-                            WorkoutTimeline(
-                              timeline: _controller.timeline,
-                              currentIndex: _controller.phaseIndex,
-                              currentRemainingSeconds:
-                                  _controller.remainingSeconds,
-                              program: _controller.config.program,
-                            ),
-                            if (_isHiitCardio(_controller.config)) ...[
-                              const SizedBox(height: 14),
-                              const _HiitGuideCard(),
-                            ],
-                            if (_isVo2MaxFourByFour(_controller.config)) ...[
-                              const SizedBox(height: 14),
-                              const _Vo2MaxGuideCard(),
-                            ],
-                            if (_isTabataCardio(_controller.config)) ...[
-                              const SizedBox(height: 14),
-                              const _TabataGuideCard(),
-                            ],
-                            if (_isCalisthenicsRoutine(_controller.config)) ...[
-                              const SizedBox(height: 14),
-                              _CalisthenicsGuideCard(
-                                phase: phase,
-                                currentExercise: _currentCalisthenicsExercise(
-                                  phase,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 20),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: widget.timerMode == TimerMode.home
+                      ? _buildHomeLayout(context, phase, palette, nextPhase)
+                      : _buildWorkoutLayout(context, phase, palette, nextPhase),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildHomeLayout(
+    BuildContext context,
+    WorkoutPhase phase,
+    List<Color> palette,
+    WorkoutPhase nextPhase,
+  ) {
+    return HomeTimerLayout(
+      phase: phase,
+      palette: palette,
+      isRunning: _controller.isRunning,
+      phaseProgress: _controller.phaseProgress,
+      remainingSeconds: _controller.remainingSeconds,
+      pulseScale: _pulseController.value,
+      totalProgress: _controller.totalProgress,
+      elapsedSeconds: _controller.elapsedWorkoutSeconds,
+      totalWorkoutSeconds: _controller.totalWorkoutSeconds,
+      timeline: _controller.timeline,
+      phaseIndex: _controller.phaseIndex,
+      currentRemainingSeconds: _controller.remainingSeconds,
+      nextPhase: nextPhase,
+      config: _controller.config,
+      onStartPause: () {
+        if (_controller.isRunning) {
+          _controller.pause();
+          WakelockPlus.disable();
+        } else {
+          final wasNotStarted = !_hasStarted;
+          _hasStarted = true;
+          _controller.start();
+          WakelockPlus.enable();
+          if (wasNotStarted) {
+            HapticFeedback.heavyImpact();
+          }
+        }
+      },
+      onReset: () {
+        _didRecordCompletionStats = false;
+        _hasStarted = false;
+        _controller.stop(reset: true);
+        WakelockPlus.disable();
+      },
+      onSkip: _controller.skipPhase,
+      headerSubtitle: _phaseHeaderSubtitle(phase),
+      onBackPressed: _goBackToHome,
+      canPop: Navigator.of(context).canPop(),
+      customizationWidget: _CustomizationToggleCard(
+        expanded: _showCustomizationPanel,
+        onTap: () {
+          setState(() {
+            _showCustomizationPanel = !_showCustomizationPanel;
+          });
+        },
+      ),
+      configPanelWidget: _ConfigPanel(
+        config: _controller.config,
+        selectedIntensity: _selectedIntensity,
+        onChanged: _updateConfig,
+        voiceCueEnabled: _voiceCueEnabled,
+        hapticCueEnabled: _hapticCueEnabled,
+        onVoiceCueChanged: (value) {
+          setState(() {
+            _voiceCueEnabled = value;
+          });
+          if (!value) {
+            _audioEngine.stop();
+          }
+          _scheduleSettingsPersist();
+        },
+        onHapticCueChanged: (value) {
+          setState(() {
+            _hapticCueEnabled = value;
+          });
+          _scheduleSettingsPersist();
+        },
+        muteVoiceWhileMusicPlays: _muteVoiceWhileMusicPlays,
+        onMuteVoiceWhileMusicChanged: (value) {
+          setState(() {
+            _muteVoiceWhileMusicPlays = value;
+          });
+          if (value && _musicService.player.playing) {
+            _audioEngine.stop();
+          }
+          _scheduleSettingsPersist();
+        },
+        voiceCueVolume: _voiceCueVolume,
+        onVoiceCueVolumeChanged: (value) async {
+          setState(() {
+            _voiceCueVolume = value;
+          });
+          _scheduleSettingsPersist();
+        },
+        voiceCueRate: _voiceCueRate,
+        onVoiceCueRateChanged: (value) async {
+          setState(() {
+            _voiceCueRate = value;
+          });
+          _scheduleSettingsPersist();
+        },
+        audioEngine: _audioEngine,
+        settings: AppSettings.defaults(),
+        currentFingerprint: _audioEngine.currentFingerprint,
+        currentExerciseNames: _exerciseNames,
+      ),
+      showCustomizationPanel: _showCustomizationPanel,
+      tempoPanelWidget: _PhaseTempoPanel(
+        profile: _phaseMusicProfile(phase),
+        autoProfileEnabled: _autoPhaseMusicProfileEnabled,
+        isMusicPlaying: _musicService.player.playing,
+        playbackSpeed: _musicService.playbackSpeed,
+        onAutoProfileChanged: (value) async {
+          setState(() {
+            _autoPhaseMusicProfileEnabled = value;
+          });
+          if (value && _musicService.player.playing) {
+            await _applyPhaseMusicProfile(phase);
+          }
+        },
+      ),
+      guideCards: [
+        if (_isHiitCardio(_controller.config)) ...[
+          const SizedBox(height: 14),
+          const _HiitGuideCard(),
+        ],
+        if (_isVo2MaxFourByFour(_controller.config)) ...[
+          const SizedBox(height: 14),
+          const _Vo2MaxGuideCard(),
+        ],
+        if (_isTabataCardio(_controller.config)) ...[
+          const SizedBox(height: 14),
+          const _TabataGuideCard(),
+        ],
+        if (_isCalisthenicsRoutine(_controller.config)) ...[
+          const SizedBox(height: 14),
+          _CalisthenicsGuideCard(
+            phase: phase,
+            currentExercise: _currentCalisthenicsExercise(phase),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildWorkoutLayout(
+    BuildContext context,
+    WorkoutPhase phase,
+    List<Color> palette,
+    WorkoutPhase nextPhase,
+  ) {
+    if (_controller.isComplete && _hasStarted) {
+      return _buildCompletionScreen(context, palette);
+    }
+
+    final isPaused = !_controller.isRunning && _hasStarted;
+
+    return WorkoutTimerLayout(
+      phase: phase,
+      palette: palette,
+      isRunning: _controller.isRunning,
+      isComplete: _controller.isComplete,
+      phaseProgress: _controller.phaseProgress,
+      remainingSeconds: _controller.remainingSeconds,
+      totalProgress: _controller.totalProgress,
+      elapsedSeconds: _controller.elapsedWorkoutSeconds,
+      totalWorkoutSeconds: _controller.totalWorkoutSeconds,
+      timeline: _controller.timeline,
+      phaseIndex: _controller.phaseIndex,
+      currentRemainingSeconds: _controller.remainingSeconds,
+      nextPhase: nextPhase,
+      mediaPath: _activeExerciseMediaPath,
+      videoController: _exerciseVideoController,
+      loadingMedia: _loadingExerciseMedia,
+      isPaused: isPaused,
+      onStartPause: () {
+        if (_controller.isRunning) {
+          _controller.pause();
+          WakelockPlus.disable();
+        } else {
+          final wasNotStarted = !_hasStarted;
+          _hasStarted = true;
+          _controller.start();
+          WakelockPlus.enable();
+          if (wasNotStarted) {
+            HapticFeedback.heavyImpact();
+          }
+        }
+      },
+      onReset: () {
+        _didRecordCompletionStats = false;
+        _hasStarted = false;
+        _controller.stop(reset: true);
+        WakelockPlus.disable();
+      },
+      onSkip: _controller.skipPhase,
+      onResume: () {
+        _controller.start();
+        WakelockPlus.enable();
+      },
+      onRestart: () {
+        _hasStarted = false;
+        _controller.stop(reset: true);
+        WakelockPlus.disable();
+      },
+      onQuit: () {
+        _hasStarted = false;
+        _controller.stop(reset: true);
+        WakelockPlus.disable();
+        _goBackToHome();
+      },
+      headerTitle: 'Workout Player',
+      headerSubtitle: _phaseHeaderSubtitle(phase),
+      onBackPressed: _goBackToHome,
+      canPop: Navigator.of(context).canPop(),
+    );
+  }
+
+  Widget _buildCompletionScreen(BuildContext context, List<Color> palette) {
+    final totalMinutes = _controller.totalWorkoutSeconds ~/ 60;
+    final totalSecs = _controller.totalWorkoutSeconds % 60;
+    final estimatedCalories = (_controller.totalWorkoutSeconds * 0.15).round();
+    final completedExercises = _controller.timeline
+        .where((p) => p.type == WorkoutPhaseType.work)
+        .length;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.4),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Workout Complete',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 28,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$totalMinutes min $totalSecs sec',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _CompletionStat(
+                    icon: Icons.local_fire_department_rounded,
+                    value: '$estimatedCalories',
+                    label: 'cal',
+                  ),
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: Colors.white.withValues(alpha: 0.15),
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                  ),
+                  _CompletionStat(
+                    icon: Icons.fitness_center_rounded,
+                    value: '$completedExercises',
+                    label: 'exercises',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  _hasStarted = false;
+                  _controller.stop(reset: true);
+                  _goBackToHome();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF8A1E),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  'Done',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionStat extends StatelessWidget {
+  const _CompletionStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFFFF8A1E), size: 20),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -1444,211 +1444,7 @@ class _PhaseMusicProfile {
   final double playbackSpeed;
 }
 
-class _HeroSessionCard extends StatelessWidget {
-  const _HeroSessionCard({
-    required this.phase,
-    required this.palette,
-    required this.isRunning,
-    required this.countdown,
-  });
 
-  final WorkoutPhase phase;
-  final List<Color> palette;
-  final bool isRunning;
-  final Widget countdown;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(36),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: palette.first.withValues(alpha: 0.12),
-            blurRadius: 40,
-            spreadRadius: -4,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 24,
-            spreadRadius: -6,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: isRunning
-                    ? const Color(0xFF22C55E).withValues(alpha: 0.15)
-                    : Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: isRunning
-                      ? const Color(0xFF22C55E).withValues(alpha: 0.30)
-                      : Colors.white.withValues(alpha: 0.10),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isRunning
-                          ? const Color(0xFF22C55E)
-                          : Colors.white54,
-                      boxShadow: isRunning
-                          ? [
-                              BoxShadow(
-                                color: const Color(0xFF22C55E)
-                                    .withValues(alpha: 0.6),
-                                blurRadius: 6,
-                              ),
-                            ]
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isRunning ? 'Running' : 'Ready',
-                    style: TextStyle(
-                      color: isRunning
-                          ? const Color(0xFF22C55E)
-                          : Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: countdown,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              PhaseBadge(
-                icon: Icons.local_fire_department_rounded,
-                label: phase.label,
-                accent: palette.first,
-              ),
-              const SizedBox(width: 8),
-              PhaseBadge(
-                icon: Icons.timer_rounded,
-                label: '${phase.durationSeconds}s',
-                accent: palette.last,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-
-class _ExerciseMediaPanel extends StatelessWidget {
-  const _ExerciseMediaPanel({
-    required this.mediaPath,
-    required this.videoController,
-    required this.loading,
-  });
-
-  final String? mediaPath;
-  final VideoPlayerController? videoController;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasMedia = mediaPath != null;
-    final isVideo =
-        hasMedia && mediaPath!.startsWith('assets/exercises/videos/');
-
-    Widget body;
-    if (loading) {
-      body = const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    } else if (!hasMedia) {
-      body = const Center(
-        child: Text(
-          'Add GIF/MP4 files to assets/exercises to see exercise visuals here.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white70),
-        ),
-      );
-    } else if (isVideo) {
-      if (videoController != null && videoController!.value.isInitialized) {
-        final ratio = videoController!.value.aspectRatio <= 0
-            ? 16 / 9
-            : videoController!.value.aspectRatio;
-        body = ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: AspectRatio(
-            aspectRatio: ratio,
-            child: VideoPlayer(videoController!),
-          ),
-        );
-      } else {
-        body = const Center(child: CircularProgressIndicator(strokeWidth: 2));
-      }
-    } else {
-      body = ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.asset(
-          mediaPath!,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return const Center(
-              child: Text(
-                'Could not load this exercise image.',
-                style: TextStyle(color: Colors.white70),
-              ),
-            );
-          },
-        ),
-      );
-    }
-
-    return Container(
-      constraints: const BoxConstraints(minHeight: 190),
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: body,
-    );
-  }
-}
 
 class _CalisthenicsGuideCard extends StatelessWidget {
   const _CalisthenicsGuideCard({
@@ -2300,6 +2096,10 @@ class _ConfigPanel extends StatelessWidget {
     required this.onVoiceCueVolumeChanged,
     required this.voiceCueRate,
     required this.onVoiceCueRateChanged,
+    required this.audioEngine,
+    required this.settings,
+    required this.currentFingerprint,
+    required this.currentExerciseNames,
   });
 
   final WorkoutConfig config;
@@ -2322,6 +2122,10 @@ class _ConfigPanel extends StatelessWidget {
   final ValueChanged<double> onVoiceCueVolumeChanged;
   final double voiceCueRate;
   final ValueChanged<double> onVoiceCueRateChanged;
+  final AudioEngine audioEngine;
+  final AppSettings settings;
+  final String? currentFingerprint;
+  final List<String> currentExerciseNames;
 
   @override
   Widget build(BuildContext context) {
@@ -2474,6 +2278,33 @@ class _ConfigPanel extends StatelessWidget {
             max: 0.8,
             divisions: 12,
             onChanged: onVoiceCueRateChanged,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AudioSettingsPage(
+                      audioEngine: audioEngine,
+                      settings: settings,
+                      onSettingsChanged: () {},
+                      currentFingerprint: currentFingerprint,
+                      currentExerciseNames: currentExerciseNames,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Audio Settings'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF22C55E),
+                side: const BorderSide(color: Color(0xFF22C55E)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
           ),
         ],
       ),
@@ -2707,135 +2538,4 @@ class _PhaseTempoPanel extends StatelessWidget {
     );
   }
 }
-
-class _MusicChip extends StatelessWidget {
-  const _MusicChip({
-    required this.loading,
-    required this.onTap,
-    required this.selectedSongTitle,
-    required this.isPlaying,
-    required this.onStop,
-    required this.onNext,
-    required this.onPrevious,
-  });
-
-  final bool loading;
-  final VoidCallback onTap;
-  final String? selectedSongTitle;
-  final bool isPlaying;
-  final VoidCallback onStop;
-  final VoidCallback onNext;
-  final VoidCallback onPrevious;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isPlaying) {
-      return Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFFF8A1E).withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFFF8A1E).withValues(alpha: 0.30),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _MusicIconButton(
-              icon: Icons.skip_previous_rounded,
-              onTap: onPrevious,
-            ),
-            _MusicIconButton(
-              icon: Icons.stop_rounded,
-              onTap: onStop,
-            ),
-            _MusicIconButton(
-              icon: Icons.skip_next_rounded,
-              onTap: onNext,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return InkWell(
-      onTap: loading ? null : onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selectedSongTitle != null
-              ? const Color(0xFFFF8A1E).withValues(alpha: 0.12)
-              : Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selectedSongTitle != null
-                ? const Color(0xFFFF8A1E).withValues(alpha: 0.30)
-                : Colors.white.withValues(alpha: 0.10),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (loading)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              Icon(
-                Icons.library_music_rounded,
-                color: selectedSongTitle != null
-                    ? const Color(0xFFFF8A1E)
-                    : Colors.white70,
-                size: 18,
-              ),
-            const SizedBox(width: 8),
-            Text(
-              selectedSongTitle == null ? 'Music' : 'Track set',
-              style: TextStyle(
-                color: selectedSongTitle != null
-                    ? const Color(0xFFFFB15C)
-                    : Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MusicIconButton extends StatelessWidget {
-  const _MusicIconButton({
-    required this.icon,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: Icon(
-          icon,
-          color: const Color(0xFFFFB15C),
-          size: 18,
-        ),
-      ),
-    );
-  }
-}
-
-
-
 
