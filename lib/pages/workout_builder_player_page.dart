@@ -11,6 +11,7 @@ import 'package:my_app/services/gemini_voice_service.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/music_service.dart';
 import 'package:my_app/services/sfx_service.dart';
+import 'package:my_app/services/workout_foreground_service.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/widgets/countdown_bar.dart';
 import 'package:my_app/widgets/music_controls.dart';
@@ -75,6 +76,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       music: _musicService,
     );
     _initializeCueSettings();
+    _listenForNotificationActions();
   }
 
   @override
@@ -196,6 +198,31 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       }
       _showMessage('Could not load cue settings. Using defaults.');
     }
+  }
+
+  void _listenForNotificationActions() {
+    WorkoutForegroundService.instance.onAction.listen((action) {
+      switch (action) {
+        case 'pause':
+          if (_isRunning) {
+            _pause();
+            WorkoutForegroundService.instance.update(isPaused: true);
+          }
+        case 'resume':
+          if (!_isRunning && !_isComplete && _phaseIndex > 0) {
+            _start();
+            WorkoutForegroundService.instance.update(isPaused: false);
+          }
+        case 'skip':
+          _skip();
+        case 'stop':
+          _stopAndReset();
+        case 'music_toggle':
+        case 'music_stop':
+          _musicService.stop();
+          setState(() {});
+      }
+    });
   }
 
   List<String> _buildExerciseNames() {
@@ -381,6 +408,17 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     WakelockPlus.enable();
     HapticFeedback.heavyImpact();
 
+    // Start foreground service
+    final phase = _timeline[_phaseIndex];
+    WorkoutForegroundService.instance.start(
+      workoutName: _routine?.name ?? 'Workout',
+      exerciseName: phase.label,
+      remainingSeconds: _remainingSeconds,
+      currentSet: _phaseIndex + 1,
+      totalSets: _timeline.length,
+      isMusicPlaying: _musicService.player.playing,
+    );
+
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isRunning) {
         return;
@@ -392,6 +430,18 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
           _moveToNextPhase();
         }
       });
+
+      // Update foreground notification
+      if (WorkoutForegroundService.instance.isRunning) {
+        final phase = _timeline[_phaseIndex];
+        WorkoutForegroundService.instance.update(
+          exerciseName: phase.label,
+          remainingSeconds: _remainingSeconds,
+          currentSet: _phaseIndex + 1,
+          isPaused: !_isRunning,
+          isMusicPlaying: _musicService.player.playing,
+        );
+      }
 
       unawaited(_handleWorkoutCues());
       unawaited(_persistResumeSnapshot());
@@ -421,6 +471,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       _didAnnounceCompletion = false;
     });
     WakelockPlus.disable();
+    WorkoutForegroundService.instance.stop();
     unawaited(_settingsService.clearWorkoutBuilderResumeSession());
   }
 
@@ -444,6 +495,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     _remainingSeconds = 0;
     _isRunning = false;
     _ticker?.cancel();
+    WorkoutForegroundService.instance.stop();
     unawaited(_settingsService.clearWorkoutBuilderResumeSession());
   }
 
