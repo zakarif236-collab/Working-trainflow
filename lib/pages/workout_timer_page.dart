@@ -151,7 +151,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         case 'stop':
           _controller.stop(reset: true);
           WakelockPlus.disable();
-          WorkoutForegroundService.instance.stop();
+          try { WorkoutForegroundService.instance.stop(); } catch (_) {}
           setState(() {});
         case 'music_toggle':
         case 'music_stop':
@@ -164,7 +164,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   @override
   void dispose() {
     WakelockPlus.disable();
-    WorkoutForegroundService.instance.stop();
+    try { WorkoutForegroundService.instance.stop(); } catch (_) {}
     _settingsPersistDebounce?.cancel();
     _controller.removeListener(_watchWorkoutErrors);
     _controller.dispose();
@@ -697,7 +697,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
 
     if (_controller.isComplete && !_didAnnounceCompletion) {
       _didAnnounceCompletion = true;
-      WorkoutForegroundService.instance.stop();
+      try { WorkoutForegroundService.instance.stop(); } catch (_) {}
       if (!_didRecordCompletionStats) {
         _didRecordCompletionStats = true;
         try {
@@ -1250,14 +1250,16 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
             HapticFeedback.heavyImpact();
           }
           final phase = _controller.currentPhase;
-          WorkoutForegroundService.instance.start(
-            workoutName: _controller.config.program.name,
-            exerciseName: _phaseVoiceCueText(phase),
-            remainingSeconds: _controller.remainingSeconds,
-            currentSet: _controller.phaseIndex + 1,
-            totalSets: _controller.timeline.length,
-            isMusicPlaying: _musicService.player.playing,
-          );
+          try {
+            WorkoutForegroundService.instance.start(
+              workoutName: _controller.config.program.name,
+              exerciseName: _phaseVoiceCueText(phase),
+              remainingSeconds: _controller.remainingSeconds,
+              currentSet: _controller.phaseIndex + 1,
+              totalSets: _controller.timeline.length,
+              isMusicPlaying: _musicService.player.playing,
+            );
+          } catch (_) {}
         }
       },
       onReset: () {
@@ -1265,7 +1267,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
-        WorkoutForegroundService.instance.stop();
+        try { WorkoutForegroundService.instance.stop(); } catch (_) {}
       },
       onSkip: _controller.skipPhase,
       headerSubtitle: _phaseHeaderSubtitle(phase),
@@ -1416,14 +1418,16 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
             HapticFeedback.heavyImpact();
           }
           final phase = _controller.currentPhase;
-          WorkoutForegroundService.instance.start(
-            workoutName: _controller.config.program.name,
-            exerciseName: _phaseVoiceCueText(phase),
-            remainingSeconds: _controller.remainingSeconds,
-            currentSet: _controller.phaseIndex + 1,
-            totalSets: _controller.timeline.length,
-            isMusicPlaying: _musicService.player.playing,
-          );
+          try {
+            WorkoutForegroundService.instance.start(
+              workoutName: _controller.config.program.name,
+              exerciseName: _phaseVoiceCueText(phase),
+              remainingSeconds: _controller.remainingSeconds,
+              currentSet: _controller.phaseIndex + 1,
+              totalSets: _controller.timeline.length,
+              isMusicPlaying: _musicService.player.playing,
+            );
+          } catch (_) {}
         }
       },
       onReset: () {
@@ -1431,7 +1435,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
-        WorkoutForegroundService.instance.stop();
+        try { WorkoutForegroundService.instance.stop(); } catch (_) {}
       },
       onSkip: _controller.skipPhase,
       onResume: () {
@@ -1443,13 +1447,13 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
-        WorkoutForegroundService.instance.stop();
+        try { WorkoutForegroundService.instance.stop(); } catch (_) {}
       },
       onQuit: () {
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
-        WorkoutForegroundService.instance.stop();
+        try { WorkoutForegroundService.instance.stop(); } catch (_) {}
         _goBackToHome();
       },
       headerTitle: 'Workout Player',
@@ -1555,7 +1559,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
                 onPressed: () {
                   _hasStarted = false;
                   _controller.stop(reset: true);
-                  WorkoutForegroundService.instance.stop();
+                  try { WorkoutForegroundService.instance.stop(); } catch (_) {}
                   _goBackToHome();
                 },
                 style: ElevatedButton.styleFrom(

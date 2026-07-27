@@ -409,15 +409,17 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     HapticFeedback.heavyImpact();
 
     // Start foreground service
-    final phase = _timeline[_phaseIndex];
-    WorkoutForegroundService.instance.start(
-      workoutName: _routine?.name ?? 'Workout',
-      exerciseName: phase.label,
-      remainingSeconds: _remainingSeconds,
-      currentSet: _phaseIndex + 1,
-      totalSets: _timeline.length,
-      isMusicPlaying: _musicService.player.playing,
-    );
+    try {
+      final phase = _timeline[_phaseIndex];
+      WorkoutForegroundService.instance.start(
+        workoutName: _routine?.name ?? 'Workout',
+        exerciseName: phase.label,
+        remainingSeconds: _remainingSeconds,
+        currentSet: _phaseIndex + 1,
+        totalSets: _timeline.length,
+        isMusicPlaying: _musicService.player.playing,
+      );
+    } catch (_) {}
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isRunning) {
@@ -471,7 +473,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
       _didAnnounceCompletion = false;
     });
     WakelockPlus.disable();
-    WorkoutForegroundService.instance.stop();
+    try { WorkoutForegroundService.instance.stop(); } catch (_) {}
     unawaited(_settingsService.clearWorkoutBuilderResumeSession());
   }
 
@@ -495,7 +497,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     _remainingSeconds = 0;
     _isRunning = false;
     _ticker?.cancel();
-    WorkoutForegroundService.instance.stop();
+    try { WorkoutForegroundService.instance.stop(); } catch (_) {}
     unawaited(_settingsService.clearWorkoutBuilderResumeSession());
   }
 
