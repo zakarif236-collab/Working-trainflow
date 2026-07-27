@@ -20,7 +20,10 @@ class CommunityFirestoreService {
   // --- Publish ---
 
   Future<String?> publishWorkout(PublishCommunityWorkoutInput input) async {
-    if (_uid == null) return null;
+    if (_uid == null) {
+      print('[CommunityFirestore] BLOCKED: _uid is null — user not authenticated with Firebase Auth');
+      return null;
+    }
 
     final user = _auth.currentUser;
     final docRef = _workouts.doc();
@@ -54,9 +57,13 @@ class CommunityFirestoreService {
     );
 
     try {
-      await docRef.set(workout.toJson());
+      final json = workout.toJson();
+      print('[CommunityFirestore] Publishing workout: title="${input.title}", creatorId=$_uid, docId=${docRef.id}');
+      await docRef.set(json);
+      print('[CommunityFirestore] SUCCESS: Workout published to Firestore');
       return docRef.id;
-    } catch (_) {
+    } catch (e) {
+      print('[CommunityFirestore] FAILED: $e');
       return null;
     }
   }
@@ -130,6 +137,20 @@ class CommunityFirestoreService {
         'shares': FieldValue.increment(1),
       });
     } catch (_) {}
+  }
+
+  Future<bool> deleteWorkout(String workoutId) async {
+    if (_uid == null) return false;
+    try {
+      final doc = await _workouts.doc(workoutId).get();
+      if (!doc.exists) return false;
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null || data['creatorId'] != _uid) return false;
+      await _workouts.doc(workoutId).delete();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> rateWorkout(String workoutId, int rating) async {

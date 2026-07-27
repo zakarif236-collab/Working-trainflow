@@ -83,12 +83,14 @@ class _CommunityPageState extends State<CommunityPage>
     _feedSubscription = CommunityFirestoreService.instance.streamWorkouts().listen(
       (workouts) {
         if (!mounted) return;
+        print('[CommunityPage] Firestore stream received ${workouts.length} workouts');
         setState(() {
           _workouts = workouts;
           _loading = false;
         });
       },
-      onError: (_) async {
+      onError: (e) async {
+        print('[CommunityPage] Firestore stream error: $e — falling back to local');
         final local = await _settingsService.loadCommunityWorkouts();
         if (!mounted) return;
         setState(() {
@@ -330,6 +332,47 @@ class _CommunityPageState extends State<CommunityPage>
     _settingsService.toggleFollowCreator(workout.creatorId);
   }
 
+  Future<void> _deleteWorkout(CommunityWorkout workout) async {
+    if (!await _requireAuth()) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2744),
+        title: const Text('Delete workout?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'This will permanently remove "${workout.title}" from community.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Color(0xFFEF4444))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final success = await CommunityFirestoreService.instance.deleteWorkout(workout.id);
+    if (!mounted) return;
+    if (success) {
+      setState(() {
+        _workouts.removeWhere((w) => w.id == workout.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Workout deleted'), behavior: SnackBarBehavior.floating),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete workout'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
   Future<void> _openCreatorProfile(CommunityWorkout workout) async {
     if (!mounted) {
       return;
@@ -535,6 +578,7 @@ class _CommunityPageState extends State<CommunityPage>
                             final workout = entries[index];
                             return _CommunityWorkoutCard(
                               workout: workout,
+                              isOwner: workout.creatorId == _authService.currentUserId,
                               onLike: () => _toggleLike(workout),
                               onFavorite: () => _toggleFavorite(workout),
                               onSave: () => _saveToMyWorkouts(workout),
@@ -543,6 +587,7 @@ class _CommunityPageState extends State<CommunityPage>
                               onRate: () => _rateWorkout(workout),
                               onCreatorTap: () => _openCreatorProfile(workout),
                               onFollowCreator: () => _toggleFollowCreator(workout),
+                              onDelete: () => _deleteWorkout(workout),
                             );
                           },
                         );
@@ -567,6 +612,8 @@ class _CommunityWorkoutCard extends StatefulWidget {
     required this.onRate,
     required this.onCreatorTap,
     required this.onFollowCreator,
+    this.onDelete,
+    this.isOwner = false,
   });
 
   final CommunityWorkout workout;
@@ -578,6 +625,8 @@ class _CommunityWorkoutCard extends StatefulWidget {
   final VoidCallback onRate;
   final VoidCallback onCreatorTap;
   final VoidCallback onFollowCreator;
+  final VoidCallback? onDelete;
+  final bool isOwner;
 
   @override
   State<_CommunityWorkoutCard> createState() => _CommunityWorkoutCardState();
@@ -673,6 +722,17 @@ class _CommunityWorkoutCardState extends State<_CommunityWorkoutCard> {
                     ),
                   ),
                 ),
+                if (widget.isOwner && widget.onDelete != null) ...[
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: widget.onDelete,
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Color(0xFFEF4444),
+                      size: 18,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
