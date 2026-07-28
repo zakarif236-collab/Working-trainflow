@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:my_app/models/sync_action.dart';
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/services/sync_queue.dart';
 
 class CommunityFirestoreService {
   CommunityFirestoreService._();
@@ -54,6 +56,8 @@ class CommunityFirestoreService {
       comments: const [],
       isFollowingCreator: false,
       visibility: 'public',
+      likedBy: const [],
+      savedBy: const [],
     );
 
     try {
@@ -80,6 +84,7 @@ class CommunityFirestoreService {
 
       return snapshot.docs
           .map((doc) => CommunityWorkout.fromJson(doc.data() as Map<String, dynamic>))
+          .map(_applyUserState)
           .toList();
     } catch (_) {
       return [];
@@ -96,7 +101,16 @@ class CommunityFirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => CommunityWorkout.fromJson(doc.data() as Map<String, dynamic>))
+            .map(_applyUserState)
             .toList());
+  }
+
+  CommunityWorkout _applyUserState(CommunityWorkout workout) {
+    if (_uid == null) return workout;
+    final liked = workout.likedBy.contains(_uid);
+    final saved = workout.savedBy.contains(_uid);
+    if (liked == workout.isLiked && saved == workout.isSaved) return workout;
+    return workout.copyWith(isLiked: liked, isSaved: saved);
   }
 
   // --- Interactions ---
@@ -106,6 +120,9 @@ class CommunityFirestoreService {
     try {
       await _workouts.doc(workoutId).update({
         'likes': FieldValue.increment(currentlyLiked ? -1 : 1),
+        'likedBy': currentlyLiked
+            ? FieldValue.arrayRemove([_uid])
+            : FieldValue.arrayUnion([_uid]),
       });
       final userLikeDoc = _users.doc(_uid).collection('liked_workouts').doc(workoutId);
       if (currentlyLiked) {
@@ -113,7 +130,12 @@ class CommunityFirestoreService {
       } else {
         await userLikeDoc.set({'likedAt': FieldValue.serverTimestamp()});
       }
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'like_workout',
+        params: {'workoutId': workoutId, 'isLiked': !currentlyLiked},
+      ));
+    }
   }
 
   Future<void> toggleFavorite(String workoutId, bool currentlyFavorited) async {
@@ -128,7 +150,64 @@ class CommunityFirestoreService {
       } else {
         await userFavDoc.set({'favoritedAt': FieldValue.serverTimestamp()});
       }
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'like_workout',
+        params: {'workoutId': workoutId, 'isLiked': !currentlyFavorited},
+      ));
+    }
+  }
+
+  Future<void> toggleSave(String workoutId, bool currentlySaved) async {
+    if (_uid == null) return;
+    try {
+      await _workouts.doc(workoutId).update({
+        'savedBy': currentlySaved
+            ? FieldValue.arrayRemove([_uid])
+            : FieldValue.arrayUnion([_uid]),
+      });
+      final savedDoc = _users.doc(_uid).collection('savedWorkouts').doc(workoutId);
+      if (currentlySaved) {
+        await savedDoc.delete();
+      } else {
+        final workoutDoc = await _workouts.doc(workoutId).get();
+        if (workoutDoc.exists) {
+          await savedDoc.set(workoutDoc.data() as Map<String, dynamic>);
+        }
+      }
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'save_workout',
+        params: {'workoutId': workoutId, 'currentlySaved': currentlySaved},
+      ));
+    }
+  }
+
+  Future<List<WorkoutBuilderRoutine>> loadSavedWorkouts() async {
+    if (_uid == null) return const [];
+    try {
+      final snapshot = await _users.doc(_uid).collection('savedWorkouts').get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        final rawExercises = data['exercises'];
+        final exercises = rawExercises is List
+            ? rawExercises
+                  .whereType<Map>()
+                  .map((raw) => WorkoutBuilderExercise.fromJson(Map<String, dynamic>.from(raw)))
+                  .toList(growable: false)
+            : const <WorkoutBuilderExercise>[];
+        return WorkoutBuilderRoutine(
+          id: doc.id,
+          name: (data['title'] as String?) ?? 'Workout',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(
+            (data['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+          ),
+          exercises: exercises,
+        );
+      }).toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<void> incrementShare(String workoutId) async {
@@ -136,7 +215,12 @@ class CommunityFirestoreService {
       await _workouts.doc(workoutId).update({
         'shares': FieldValue.increment(1),
       });
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'like_workout',
+        params: {'workoutId': workoutId, 'isLiked': true},
+      ));
+    }
   }
 
   Future<bool> deleteWorkout(String workoutId) async {
@@ -163,7 +247,12 @@ class CommunityFirestoreService {
         'ratingsCount': FieldValue.increment(1),
         'ratingsTotal': FieldValue.increment(rating),
       });
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'rate_workout',
+        params: {'workoutId': workoutId, 'stars': rating},
+      ));
+    }
   }
 
   Future<void> addComment(String workoutId, String message) async {
@@ -180,7 +269,12 @@ class CommunityFirestoreService {
       );
 
       await commentRef.set(comment.toJson());
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'add_comment',
+        params: {'workoutId': workoutId, 'message': message},
+      ));
+    }
   }
 
   Future<void> toggleFollow(String creatorId, bool currentlyFollowing) async {
@@ -192,7 +286,12 @@ class CommunityFirestoreService {
       } else {
         await followDoc.set({'followedAt': FieldValue.serverTimestamp()});
       }
-    } catch (_) {}
+    } catch (_) {
+      await SyncQueue.instance.enqueue(SyncAction(
+        type: 'follow_creator',
+        params: {'creatorId': creatorId, 'isFollowing': !currentlyFollowing},
+      ));
+    }
   }
 
   // --- Stats ---
