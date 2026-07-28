@@ -10,6 +10,8 @@ import 'package:my_app/pages/user_profile_page.dart';
 import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/community_firestore_service.dart';
 import 'package:my_app/services/settings_service.dart';
+import 'package:my_app/services/connectivity_service.dart';
+import 'package:my_app/widgets/offline_banner.dart';
 
 class CommunityPage extends StatefulWidget {
   const CommunityPage({super.key});
@@ -43,12 +45,16 @@ class _CommunityPageState extends State<CommunityPage>
   bool _didReadArgs = false;
   bool _loading = true;
   StreamSubscription<List<CommunityWorkout>>? _feedSubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: CommunityTabKind.values.length, vsync: this);
     _loadData();
+    _connectivitySubscription = ConnectivityService.instance.onConnectivityChanged.listen((online) {
+      if (online) _loadData();
+    });
   }
 
   @override
@@ -70,6 +76,7 @@ class _CommunityPageState extends State<CommunityPage>
   @override
   void dispose() {
     _feedSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -80,6 +87,17 @@ class _CommunityPageState extends State<CommunityPage>
     _myRoutines = await _settingsService.loadWorkoutBuilderRoutines();
 
     _feedSubscription?.cancel();
+
+    if (!ConnectivityService.instance.isOnline) {
+      final local = await _settingsService.loadCommunityWorkouts();
+      if (!mounted) return;
+      setState(() {
+        _workouts = local;
+        _loading = false;
+      });
+      return;
+    }
+
     _feedSubscription = CommunityFirestoreService.instance.streamWorkouts().listen(
       (workouts) {
         if (!mounted) return;
@@ -148,17 +166,23 @@ class _CommunityPageState extends State<CommunityPage>
   Future<void> _saveToMyWorkouts(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
     if (!mounted) return;
+    final willSave = !workout.isSaved;
     setState(() {
       _workouts = _workouts.map((w) {
         if (w.id != workout.id) return w;
-        return w.copyWith(isSaved: !w.isSaved);
+        return w.copyWith(isSaved: willSave);
       }).toList();
     });
-    _settingsService.saveCommunityWorkoutToMyWorkouts(workout.id);
+    CommunityFirestoreService.instance.toggleSave(workout.id, !willSave);
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Saved "${workout.title}" to My Workouts.'),
+        content: Text(
+          willSave
+              ? 'Saved "${workout.title}" to My Workouts.'
+              : 'Removed "${workout.title}" from My Workouts.',
+        ),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -503,99 +527,94 @@ class _CommunityPageState extends State<CommunityPage>
         icon: const Icon(Icons.publish_rounded),
         label: const Text('Publish'),
       ),
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
-          ),
-        ),
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  SizedBox(
-                    height: 56,
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      scrollDirection: Axis.horizontal,
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
+                ),
+              ),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
                       children: [
-                        FilterChip(
-                          selected: _selectedTags.isEmpty,
-                          onSelected: (_) {
-                            setState(() {
-                              _selectedTags.clear();
-                            });
-                          },
-                          label: const Text('All Tags'),
+                        SizedBox(
+                          height: 56,
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              FilterChip(
+                                selected: _selectedTags.isEmpty,
+                                onSelected: (_) {
+                                  setState(() { _selectedTags.clear(); });
+                                },
+                                label: const Text('All Tags'),
+                              ),
+                              const SizedBox(width: 6),
+                              ..._allTags.map((tag) {
+                                final active = _selectedTags.contains(tag);
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: FilterChip(
+                                    selected: active,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) { _selectedTags.add(tag); } else { _selectedTags.remove(tag); }
+                                      });
+                                    },
+                                    label: Text(tag),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 6),
-                        ..._allTags.map((tag) {
-                          final active = _selectedTags.contains(tag);
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: FilterChip(
-                              selected: active,
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedTags.add(tag);
-                                  } else {
-                                    _selectedTags.remove(tag);
-                                  }
-                                });
-                              },
-                              label: Text(tag),
-                            ),
-                          );
-                        }),
+                        Expanded(
+                          child: TabBarView(
+                            controller: _tabController,
+                            children: CommunityTabKind.values.map((tab) {
+                              final entries = _filteredForTab(tab);
+                              if (entries.isEmpty) {
+                                return const Center(child: Padding(
+                                  padding: EdgeInsets.all(22),
+                                  child: Text('No workouts match this tab and filter combination yet.',
+                                    style: TextStyle(color: Colors.white70), textAlign: TextAlign.center),
+                                ));
+                              }
+                              return ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(14, 10, 14, 80),
+                                itemCount: entries.length,
+                                itemBuilder: (context, index) {
+                                  final workout = entries[index];
+                                  return _CommunityWorkoutCard(
+                                    workout: workout,
+                                    isOwner: workout.creatorId == _authService.currentUserId,
+                                    onLike: () => _toggleLike(workout),
+                                    onFavorite: () => _toggleFavorite(workout),
+                                    onSave: () => _saveToMyWorkouts(workout),
+                                    onShare: () => _shareWorkout(workout),
+                                    onComment: () => _commentWorkout(workout),
+                                    onRate: () => _rateWorkout(workout),
+                                    onCreatorTap: () => _openCreatorProfile(workout),
+                                    onFollowCreator: () => _toggleFollowCreator(workout),
+                                    onDelete: () => _deleteWorkout(workout),
+                                  );
+                                },
+                              );
+                            }).toList(growable: false),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: CommunityTabKind.values.map((tab) {
-                        final entries = _filteredForTab(tab);
-                        if (entries.isEmpty) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(22),
-                              child: Text(
-                                'No workouts match this tab and filter combination yet.',
-                                style: TextStyle(color: Colors.white70),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 80),
-                          itemCount: entries.length,
-                          itemBuilder: (context, index) {
-                            final workout = entries[index];
-                            return _CommunityWorkoutCard(
-                              workout: workout,
-                              isOwner: workout.creatorId == _authService.currentUserId,
-                              onLike: () => _toggleLike(workout),
-                              onFavorite: () => _toggleFavorite(workout),
-                              onSave: () => _saveToMyWorkouts(workout),
-                              onShare: () => _shareWorkout(workout),
-                              onComment: () => _commentWorkout(workout),
-                              onRate: () => _rateWorkout(workout),
-                              onCreatorTap: () => _openCreatorProfile(workout),
-                              onFollowCreator: () => _toggleFollowCreator(workout),
-                              onDelete: () => _deleteWorkout(workout),
-                            );
-                          },
-                        );
-                      }).toList(growable: false),
-                    ),
-                  ),
-                ],
-              ),
+            ),
+          ),
+        ],
       ),
     );
   }
