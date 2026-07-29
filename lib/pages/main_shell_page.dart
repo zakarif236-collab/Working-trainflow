@@ -69,7 +69,7 @@ class _MainShellPageState extends State<MainShellPage> {
   }
 
   Future<void> _onTabSelected(int index) async {
-    if (index == 1 || index == 2) {
+    if (index == 3) {
       if (_authService.currentUserId == null) {
         final signedIn = await AuthPage.showAsSheet(context);
         if (signedIn != true || !mounted) return;
