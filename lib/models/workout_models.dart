@@ -332,6 +332,8 @@ class CommunityWorkout {
     required this.comments,
     required this.isFollowingCreator,
     this.visibility = 'public',
+    this.likedBy = const [],
+    this.savedBy = const [],
     this.userRating,
   });
 
@@ -360,6 +362,8 @@ class CommunityWorkout {
   final List<CommunityComment> comments;
   final bool isFollowingCreator;
   final String visibility;
+  final List<String> likedBy;
+  final List<String> savedBy;
 
   int get estimatedDurationSeconds {
     var total = 0;
@@ -404,6 +408,8 @@ class CommunityWorkout {
     List<CommunityComment>? comments,
     bool? isFollowingCreator,
     String? visibility,
+    List<String>? likedBy,
+    List<String>? savedBy,
   }) {
     return CommunityWorkout(
       id: id ?? this.id,
@@ -431,6 +437,8 @@ class CommunityWorkout {
       comments: comments ?? this.comments,
       isFollowingCreator: isFollowingCreator ?? this.isFollowingCreator,
       visibility: visibility ?? this.visibility,
+      likedBy: likedBy ?? this.likedBy,
+      savedBy: savedBy ?? this.savedBy,
     );
   }
 
@@ -461,6 +469,8 @@ class CommunityWorkout {
       'comments': comments.map((comment) => comment.toJson()).toList(growable: false),
       'isFollowingCreator': isFollowingCreator,
       'visibility': visibility,
+      'likedBy': likedBy,
+      'savedBy': savedBy,
     };
   }
 
@@ -536,6 +546,8 @@ class CommunityWorkout {
       comments: comments,
       isFollowingCreator: json['isFollowingCreator'] as bool? ?? false,
       visibility: json['visibility'] as String? ?? 'public',
+      likedBy: (json['likedBy'] as List<dynamic>?)?.cast<String>() ?? const [],
+      savedBy: (json['savedBy'] as List<dynamic>?)?.cast<String>() ?? const [],
     );
   }
 }
