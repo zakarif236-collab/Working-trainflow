@@ -81,6 +81,33 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('_onboardingComplete') ?? false;
   }
+
+  Future<void> signInAnonymously() async {
+    await _auth.signInAnonymously();
+  }
+
+  bool get isAnonymous => _auth.currentUser?.isAnonymous ?? false;
+
+  Future<void> linkWithGoogle() async {
+    final googleUser = await _google.signIn();
+    if (googleUser == null) throw const AuthServiceException('Google sign-in was cancelled.');
+    final googleAuth = await googleUser.authentication;
+    if (googleAuth.idToken == null) {
+      throw const AuthServiceException(
+        'Failed to get Google ID token. Make sure the OAuth consent screen is Published.',
+      );
+    }
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+    await _auth.currentUser!.linkWithCredential(credential);
+  }
+
+  Future<void> linkWithEmail(String email, String password) async {
+    final credential = EmailAuthProvider.credential(email: email.trim(), password: password);
+    await _auth.currentUser!.linkWithCredential(credential);
+  }
 }
 
 class AuthServiceException implements Exception {
