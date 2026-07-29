@@ -1,21 +1,18 @@
-# Task 3 Report: Weekly Notification Scheduling
+# Task 3 Report: AuthSheet — Handle Anonymous Linking
 
-**Status:** DONE
+## Status: DONE
 
-**Files modified:**
-- `lib/services/reminder_service.dart`
+## Summary
+Modified `lib/pages/auth_page.dart` to detect anonymous users and use credential linking instead of standard sign-in.
 
-**Changes:**
-- Added import for `workout_schedule.dart`
-- Added `_weeklyNotificationIdBase` constant (8800)
-- Added `scheduleWeeklyNotifications()` — schedules notifications on selected weekdays
-- Added `cancelWeeklyNotifications()` — cancels all weekly notifications
-- Added `sendScheduleConfirmation()` — sends immediate confirmation with day names
+## Changes Made
 
-**Analysis:** `flutter analyze` — No issues found
+1. **`_signInWithGoogle`** — Added check for `widget.authService.isAnonymous`. If anonymous, calls `linkWithGoogle()`; otherwise calls `signInWithGoogle()`.
 
-**Commit:** `feat: add weekly notification scheduling to ReminderService` (8504cf2)
+2. **`_submit`** — Added check for `widget.authService.isAnonymous`. If anonymous, calls `linkWithEmail()` and updates display name on sign-up; otherwise uses existing `signUp`/`signIn` flow.
 
-**Test summary:** Analysis passes with zero errors; no runtime test (requires device).
+## Verification
+- `dart analyze lib/pages/auth_page.dart` — **No issues found**
 
-**Concerns:** None.
+## Commits
+- `a97b4f1` — `feat: link credentials when anonymous in AuthSheet`

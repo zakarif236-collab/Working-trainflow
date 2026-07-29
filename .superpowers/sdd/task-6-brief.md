@@ -1,119 +1,58 @@
-### Task 6: Update CommunityPage for offline-first loading
+### Task 6: Model + SyncQueue + SettingsService — Utility Changes
 
 **Files:**
-- Modify: `lib/pages/community_page.dart`
+- Modify: `lib/models/workout_models.dart`
+- Modify: `lib/services/sync_queue.dart`
+- Modify: `lib/services/settings_service.dart`
 
 **Interfaces:**
-- Consumes: `ConnectivityService.instance` from Task 2, `OfflineBanner` from Task 4
+- Produces: `WorkoutBuilderRoutine.fingerprint` (String), `SyncQueue.clear()`, `SettingsService.deduplicateWorkoutRoutines()`
 
-- [ ] **Step 1: Add imports**
+**Changes:**
 
-Add at top with existing imports:
+1. In `lib/models/workout_models.dart`, add `fingerprint` getter to `WorkoutBuilderRoutine` class. Place it after `estimatedDurationSeconds` and before `copyWith`:
+
 ```dart
-import 'package:my_app/services/connectivity_service.dart';
-import 'package:my_app/widgets/offline_banner.dart';
+String get fingerprint {
+  final buffer = StringBuffer(name.trim().toLowerCase());
+  for (final exercise in exercises) {
+    buffer.write('|${exercise.name.trim().toLowerCase()}');
+    buffer.write(':${exercise.workSeconds}:${exercise.restSeconds}');
+  }
+  return buffer.toString();
+}
 ```
 
-- [ ] **Step 2: Add connectivity subscription field + init/cleanup**
+2. In `lib/services/sync_queue.dart`, add `clear()` method after `processQueue` and before `_execute`:
 
-Add field after `StreamSubscription<List<CommunityWorkout>>? _feedSubscription;` (line 45):
 ```dart
-  StreamSubscription<bool>? _connectivitySubscription;
+Future<void> clear() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_queueKey);
+}
 ```
 
-In `initState()`, after `_loadData();` add:
+3. In `lib/services/settings_service.dart`, add `deduplicateWorkoutRoutines()` method. Place it near the end of the class, before the closing brace (after `clearWorkoutSchedule` or any existing method):
+
 ```dart
-    _connectivitySubscription = ConnectivityService.instance.onConnectivityChanged.listen((online) {
-      if (online) _loadData();
-    });
-```
-
-In `dispose()`, add:
-```dart
-    _connectivitySubscription?.cancel();
-```
-
-- [ ] **Step 3: Update _loadData to check connectivity first**
-
-Replace the current `_loadData()` method with:
-```dart
-  Future<void> _loadData() async {
-    setState(() => _loading = true);
-
-    _myRoutines = await _settingsService.loadWorkoutBuilderRoutines();
-
-    _feedSubscription?.cancel();
-
-    if (!ConnectivityService.instance.isOnline) {
-      final local = await _settingsService.loadCommunityWorkouts();
-      if (!mounted) return;
-      setState(() {
-        _workouts = local;
-        _loading = false;
-      });
-      return;
+Future<void> deduplicateWorkoutRoutines() async {
+  final routines = await loadWorkoutBuilderRoutines();
+  if (routines.length < 2) return;
+  final seen = <String>{};
+  final deduped = <WorkoutBuilderRoutine>[];
+  for (final routine in routines) {
+    if (seen.add(routine.fingerprint)) {
+      deduped.add(routine);
     }
-
-    _feedSubscription = CommunityFirestoreService.instance.streamWorkouts().listen(
-      (workouts) {
-        if (!mounted) return;
-        print('[CommunityPage] Firestore stream received ${workouts.length} workouts');
-        setState(() {
-          _workouts = workouts;
-          _loading = false;
-        });
-      },
-      onError: (e) async {
-        print('[CommunityPage] Firestore stream error: $e — falling back to local');
-        final local = await _settingsService.loadCommunityWorkouts();
-        if (!mounted) return;
-        setState(() {
-          _workouts = local;
-          _loading = false;
-        });
-      },
-    );
   }
+  if (deduped.length == routines.length) return;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(
+    _kWorkoutBuilderRoutines,
+    jsonEncode(deduped.map((e) => e.toJson()).toList()),
+  );
+}
 ```
 
-- [ ] **Step 4: Add OfflineBanner at top of the build method**
-
-Find the `build` method (around line 160ish — depends on exact location). At the top of the build's returned widget tree, wrap the body in a Column with the OfflineBanner at top.
-
-Look for the `Scaffold` in the build method and wrap its `body`:
-
-Before build method (around line 160), the body is typically `NestedScrollBar` or similar. Add the OfflineBanner as part of the body column:
-
-```dart
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: ...,
-      body: Column(
-        children: [
-          const OfflineBanner(),
-          Expanded(child: /* existing body content */),
-        ],
-      ),
-    );
-  }
-```
-
-The exact change depends on the current build structure. Open the file and wrap the body content appropriately.
-
-- [ ] **Step 5: Run analyzer**
-
-Run: `flutter analyze lib/pages/community_page.dart`
-Expected: No issues found
-
-- [ ] **Step 6: Run full project analysis**
-
-Run: `flutter analyze`
-Expected: No issues found (existing errors in widget_test.dart are pre-existing)
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add lib/pages/community_page.dart
-git commit -m "feat: make CommunityPage offline-first with connectivity check and banner"
-```
+Run `dart analyze lib/models/workout_models.dart lib/services/sync_queue.dart lib/services/settings_service.dart`
+Commit: `feat: add fingerprint, clear(), and dedup helpers`

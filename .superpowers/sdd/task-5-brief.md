@@ -1,137 +1,35 @@
-### Task 5: Update CommunityFirestoreService with sync queue
+### Task 5: HomePage — Disable Community Card When Offline
 
 **Files:**
-- Modify: `lib/services/community_firestore_service.dart`
+- Modify: `lib/pages/home_page.dart`
 
 **Interfaces:**
-- Consumes: `SyncQueue.instance.enqueue()` from Task 3
-- Produces: Updated Firestore write methods that queue actions on failure
+- Consumes: `ConnectivityService.instance.isOnline`
+- Produces: Community card visually disabled when offline
 
-- [ ] **Step 1: Add import for SyncQueue**
+**Changes:**
 
-Add at top of `community_firestore_service.dart`:
+1. Add import at top:
+
 ```dart
-import 'package:my_app/services/sync_queue.dart';
+import 'package:my_app/services/connectivity_service.dart';
 ```
 
-- [ ] **Step 2: Update toggleLike — enqueue on failure**
+2. Replace the Community `_ModCard` to use dynamic subtitle and null onTap when offline:
 
-Replace the empty catch block:
 ```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': !currentlyLiked},
-      ));
-    }
-```
-
-- [ ] **Step 3: Update toggleFavorite — enqueue on failure**
-
-Replace the empty catch block:
-```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': !currentlyFavorited},
-      ));
-    }
+_ModCard(
+  title: 'Community',
+  subtitle: ConnectivityService.instance.isOnline
+      ? 'Share & discover'
+      : 'Sign in when online',
+  icon: Icons.public_rounded,
+  gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
+  onTap: ConnectivityService.instance.isOnline
+      ? () => _openCommunity(context)
+      : null,
+),
 ```
 
-- [ ] **Step 4: Update toggleSave — enqueue on failure**
-
-Replace the empty catch block:
-```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'save_workout',
-        params: {'workoutId': workoutId, 'currentlySaved': currentlySaved},
-      ));
-    }
-```
-
-- [ ] **Step 5: Update rateWorkout — enqueue on failure**
-
-Replace the empty catch block:
-```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'rate_workout',
-        params: {'workoutId': workoutId, 'stars': rating},
-      ));
-    }
-```
-
-- [ ] **Step 6: Update addComment — enqueue on failure**
-
-Replace the empty catch block:
-```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'add_comment',
-        params: {'workoutId': workoutId, 'message': message},
-      ));
-    }
-```
-
-- [ ] **Step 7: Update toggleFollow — enqueue on failure**
-
-Replace the empty catch block:
-```dart
-    } catch (_) {}
-```
-with:
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'follow_creator',
-        params: {'creatorId': creatorId, 'isFollowing': !currentlyFollowing},
-      ));
-    }
-```
-
-- [ ] **Step 8: Update incrementShare — enqueue on failure (optional but consistent)**
-
-For `incrementShare` (line 196-202):
-```dart
-    } catch (_) {
-      await SyncQueue.instance.enqueue(SyncAction(
-        type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': true},
-      ));
-    }
-```
-
-- [ ] **Step 9: Run analyzer**
-
-Run: `flutter analyze lib/services/community_firestore_service.dart`
-Expected: No issues found
-
-- [ ] **Step 10: Commit**
-
-```bash
-git add lib/services/community_firestore_service.dart
-git commit -m "feat: queue offline community actions via SyncQueue"
-```
-
----
+Run `dart analyze lib/pages/home_page.dart`
+Commit: `feat: disable Community card when offline`

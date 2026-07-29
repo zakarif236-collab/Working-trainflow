@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:my_app/services/auth_service.dart';
+import 'package:my_app/services/settings_service.dart';
+import 'package:my_app/services/sync_queue.dart';
 
 class AuthPage extends StatelessWidget {
   const AuthPage({super.key, required this.authService});
@@ -67,6 +69,9 @@ class _AuthSheetState extends State<AuthSheet> {
     try {
       if (widget.authService.isAnonymous) {
         await widget.authService.linkWithGoogle();
+        final settings = SettingsService();
+        await settings.deduplicateWorkoutRoutines();
+        await SyncQueue.instance.clear();
       } else {
         await widget.authService.signInWithGoogle();
       }
@@ -101,6 +106,9 @@ class _AuthSheetState extends State<AuthSheet> {
         if (_isSignUp) {
           await FirebaseAuth.instance.currentUser?.updateDisplayName(_displayNameController.text);
         }
+        final settings = SettingsService();
+        await settings.deduplicateWorkoutRoutines();
+        await SyncQueue.instance.clear();
       } else {
         if (_isSignUp) {
           await widget.authService.signUp(

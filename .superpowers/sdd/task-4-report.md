@@ -1,13 +1,13 @@
-# Task 4: Workout Schedule Configuration Page — Report
+# Task 4 Report — MainShellPage Relax Tab Auth Gates
 
-**Status:** DONE
+## Status
+Completed successfully.
 
-**Files created:**
-- `lib/pages/workout_schedule_page.dart`
+## Commit
+81b8954 feat: only gate Profile tab behind sign-in
 
-**Commit:** `feat: add workout schedule configuration page` (89a7e4e)
+## Change Summary
+Modified `_onTabSelected` in `lib/pages/main_shell_page.dart` to only gate tab index 3 (Profile) behind sign-in, instead of tabs 1 (Mods) and 2 (Activity). Tabs 0-2 are now freely accessible without authentication.
 
-**Analysis results:**
-- 1 info-level deprecation warning: `activeColor` on `Slider` is deprecated (no errors). `activeThumbColor` replacement is not available in this Flutter version. No action needed.
-
-**Concerns:** None.
+## Test Summary
+- `dart analyze lib/pages/main_shell_page.dart` — No issues found.
