@@ -982,6 +982,24 @@ class SettingsService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_scheduleKey);
   }
+
+  Future<void> deduplicateWorkoutRoutines() async {
+    final routines = await loadWorkoutBuilderRoutines();
+    if (routines.length < 2) return;
+    final seen = <String>{};
+    final deduped = <WorkoutBuilderRoutine>[];
+    for (final routine in routines) {
+      if (seen.add(routine.fingerprint)) {
+        deduped.add(routine);
+      }
+    }
+    if (deduped.length == routines.length) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kWorkoutBuilderRoutines,
+      jsonEncode(deduped.map((e) => e.toJson()).toList()),
+    );
+  }
 }
 
 const _kSets = 'settings.sets';

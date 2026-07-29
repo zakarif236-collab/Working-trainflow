@@ -153,6 +153,15 @@ class WorkoutBuilderRoutine {
     return total;
   }
 
+  String get fingerprint {
+    final buffer = StringBuffer(name.trim().toLowerCase());
+    for (final exercise in exercises) {
+      buffer.write('|${exercise.name.trim().toLowerCase()}');
+      buffer.write(':${exercise.workSeconds}:${exercise.restSeconds}');
+    }
+    return buffer.toString();
+  }
+
   WorkoutBuilderRoutine copyWith({
     String? id,
     String? name,

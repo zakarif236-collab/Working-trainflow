@@ -49,6 +49,11 @@ class SyncQueue {
     await prefs.setString(_queueKey, remaining.isEmpty ? '' : jsonEncode(remaining));
   }
 
+  Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_queueKey);
+  }
+
   Future<void> _execute(CommunityFirestoreService firestore, SyncAction action) async {
     switch (action.type) {
       case 'like_workout':
