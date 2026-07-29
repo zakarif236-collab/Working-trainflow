@@ -23,6 +23,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  try {
+    await AuthService().signInAnonymously();
+  } catch (_) {
+    // Anonymous sign-in is best-effort; the app works without it,
+    // but some Firestore features will be unavailable until real sign-in.
+  }
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   await NotificationService.instance.load();
