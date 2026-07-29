@@ -65,7 +65,11 @@ class _AuthSheetState extends State<AuthSheet> {
   Future<void> _signInWithGoogle() async {
     setState(() => _isGoogleLoading = true);
     try {
-      await widget.authService.signInWithGoogle();
+      if (widget.authService.isAnonymous) {
+        await widget.authService.linkWithGoogle();
+      } else {
+        await widget.authService.signInWithGoogle();
+      }
       if (mounted) Navigator.of(context).pop(true);
     } on AuthServiceException catch (e) {
       if (!mounted) return;
@@ -89,17 +93,27 @@ class _AuthSheetState extends State<AuthSheet> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _isLoading = true);
     try {
-      if (_isSignUp) {
-        await widget.authService.signUp(
+      if (widget.authService.isAnonymous) {
+        await widget.authService.linkWithEmail(
           _emailController.text,
           _passwordController.text,
-          _displayNameController.text,
         );
+        if (_isSignUp) {
+          await FirebaseAuth.instance.currentUser?.updateDisplayName(_displayNameController.text);
+        }
       } else {
-        await widget.authService.signIn(
-          _emailController.text,
-          _passwordController.text,
-        );
+        if (_isSignUp) {
+          await widget.authService.signUp(
+            _emailController.text,
+            _passwordController.text,
+            _displayNameController.text,
+          );
+        } else {
+          await widget.authService.signIn(
+            _emailController.text,
+            _passwordController.text,
+          );
+        }
       }
       if (mounted) Navigator.of(context).pop(true);
     } on FirebaseAuthException catch (e) {

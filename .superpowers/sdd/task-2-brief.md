@@ -1,60 +1,22 @@
-# Task 2: Schedule Persistence in SettingsService
+### Task 2: Startup — Wire Anonymous Sign-In in main.dart
 
 **Files:**
-- Modify: `lib/services/settings_service.dart` (add 3 methods at end of class)
+- Modify: `lib/main.dart`
 
 **Interfaces:**
-- Consumes: `WorkoutSchedule` from Task 1
-- Produces: `loadWorkoutSchedule()`, `saveWorkoutSchedule(WorkoutSchedule)`, `clearWorkoutSchedule()`
+- Consumes: `AuthService.signInAnonymously()`
+- Produces: Anonymous user active before `runApp()`
 
-- [ ] **Step 1: Add import**
-
-At top of `settings_service.dart`, add:
-```dart
-import 'package:my_app/models/workout_schedule.dart';
-```
-
-- [ ] **Step 2: Add schedule methods**
-
-Add these methods inside the `SettingsService` class (before the closing brace):
+Add anonymous sign-in call after `Firebase.initializeApp(...)` and before the messaging setup:
 
 ```dart
-  // --- Workout Schedule ---
-
-  static const _scheduleKey = 'workout_schedule';
-
-  Future<WorkoutSchedule> loadWorkoutSchedule() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_scheduleKey);
-    if (raw == null || raw.isEmpty) {
-      return const WorkoutSchedule();
-    }
-    try {
-      return WorkoutSchedule.decode(raw);
-    } catch (_) {
-      return const WorkoutSchedule();
-    }
-  }
-
-  Future<void> saveWorkoutSchedule(WorkoutSchedule schedule) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_scheduleKey, schedule.encode());
-  }
-
-  Future<void> clearWorkoutSchedule() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_scheduleKey);
-  }
+try {
+  await AuthService().signInAnonymously();
+} catch (_) {
+  // Anonymous sign-in is best-effort; the app works without it,
+  // but some Firestore features will be unavailable until real sign-in.
+}
 ```
 
-- [ ] **Step 3: Verify no analysis errors**
-
-Run: `flutter analyze lib/services/settings_service.dart`
-Expected: No errors
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add lib/services/settings_service.dart
-git commit -m "feat: add workout schedule persistence to SettingsService"
-```
+Verify the file compiles: `dart analyze lib/main.dart`
+Commit with message: `feat: auto sign-in anonymously on startup`
