@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/settings_service.dart';
 
 class HomePage extends StatefulWidget {
@@ -199,10 +200,14 @@ class _HomePageState extends State<HomePage> {
                     ),
                     _ModCard(
                       title: 'Community',
-                      subtitle: 'Share & discover',
+                      subtitle: ConnectivityService.instance.isOnline
+                          ? 'Share & discover'
+                          : 'Sign in when online',
                       icon: Icons.public_rounded,
                       gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
-                      onTap: () => _openCommunity(context),
+                      onTap: ConnectivityService.instance.isOnline
+                          ? () => _openCommunity(context)
+                          : null,
                     ),
                     if (canResume)
                       _ModCard(
@@ -236,7 +241,7 @@ class _ModCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final List<Color> gradient;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
