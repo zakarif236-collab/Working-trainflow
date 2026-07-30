@@ -12,6 +12,8 @@ import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/music_service.dart';
 import 'package:my_app/services/sfx_service.dart';
 import 'package:my_app/services/workout_foreground_service.dart';
+import 'package:my_app/services/community_firestore_service.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/widgets/countdown_bar.dart';
 import 'package:my_app/widgets/music_controls.dart';
@@ -44,7 +46,8 @@ class WorkoutBuilderPlayerPage extends StatefulWidget {
   State<WorkoutBuilderPlayerPage> createState() => _WorkoutBuilderPlayerPageState();
 }
 
-class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
+class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
+    with WidgetsBindingObserver {
   late AudioEngine _audioEngine;
   late MusicService _musicService;
   List<SongModel> _songs = const [];
@@ -69,6 +72,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _musicService = MusicService();
     _audioEngine = AudioEngine(
       voice: GeminiVoiceService(),
@@ -138,7 +142,19 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      if (_isRunning) {
+        WorkoutForegroundService.instance.promoteToForeground();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      WorkoutForegroundService.instance.demoteToBackground();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _ticker?.cancel();
     if (_isComplete || !_hasProgressToResume) {
@@ -542,6 +558,37 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
     );
   }
 
+  Future<void> _shareWorkout() async {
+    final routine = _routine;
+    if (routine == null) return;
+
+    final firestoreId = await CommunityFirestoreService.instance.shareRoutine(routine);
+
+    if (!mounted) return;
+
+    if (firestoreId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to share workout. Check your connection.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final link = 'fitpulse://workout/$firestoreId';
+    await Clipboard.setData(ClipboardData(text: link));
+    await Share.share('Try my workout "${routine.name}"! $link');
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Workout shared! Link copied to clipboard.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _openMusicPicker() async {
     try {
       await _musicService.initialize();
@@ -890,6 +937,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage> {
                     navigator.pop();
                   }
                 },
+                onShare: _shareWorkout,
               ),
             if (!_isRunning && !_isComplete && _phaseIndex > 0)
               _BuilderPauseOverlay(
@@ -1228,12 +1276,14 @@ class _BuilderCompletionOverlay extends StatelessWidget {
     required this.completedExercises,
     required this.routineName,
     required this.onDone,
+    required this.onShare,
   });
 
   final int totalSeconds;
   final int completedExercises;
   final String routineName;
   final VoidCallback onDone;
+  final VoidCallback onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -1338,6 +1388,23 @@ class _BuilderCompletionOverlay extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onShare,
+                  icon: const Icon(Icons.share_rounded, size: 20),
+                  label: const Text('Share'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
