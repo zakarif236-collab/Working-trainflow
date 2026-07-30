@@ -11,6 +11,7 @@ import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/community_firestore_service.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/connectivity_service.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:my_app/widgets/offline_banner.dart';
 
 class CommunityPage extends StatefulWidget {
@@ -122,7 +123,7 @@ class _CommunityPageState extends State<CommunityPage>
   final AuthService _authService = AuthService();
 
   Future<bool> _requireAuth() async {
-    if (_authService.currentUserId != null) return true;
+    if (_authService.hasFirebaseSession) return true;
     final signedIn = await AuthPage.showAsSheet(context);
     return signedIn;
   }
@@ -190,9 +191,10 @@ class _CommunityPageState extends State<CommunityPage>
 
   Future<void> _shareWorkout(CommunityWorkout workout) async {
     if (!await _requireAuth()) return;
-    final shareText =
-        'Check out ${workout.title} by @${workout.creatorUsername}: fitpulse://community/${workout.id}';
+    final link = 'fitpulse://workout/${workout.id}';
+    final shareText = 'Try "${workout.title}" by @${workout.creatorUsername}! $link';
     await Clipboard.setData(ClipboardData(text: shareText));
+    await Share.share(shareText);
     if (!mounted) return;
     setState(() {
       _workouts = _workouts.map((w) {
@@ -202,7 +204,6 @@ class _CommunityPageState extends State<CommunityPage>
     });
     CommunityFirestoreService.instance.incrementShare(workout.id);
     _settingsService.incrementCommunityShare(workout.id);
-
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Share link copied to clipboard.'),
@@ -329,7 +330,7 @@ class _CommunityPageState extends State<CommunityPage>
     if (!mounted) return;
     final newComment = CommunityComment(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      authorUsername: _authService.currentUserId ?? 'athlete',
+      authorUsername: _authService.currentUserId,
       message: text.trim(),
       createdAt: DateTime.now(),
     );
@@ -595,6 +596,7 @@ class _CommunityPageState extends State<CommunityPage>
                                   return _CommunityWorkoutCard(
                                     workout: workout,
                                     isOwner: workout.creatorId == _authService.currentUserId,
+                                    isAdmin: _authService.isAdmin,
                                     onLike: () => _toggleLike(workout),
                                     onFavorite: () => _toggleFavorite(workout),
                                     onSave: () => _saveToMyWorkouts(workout),
@@ -633,6 +635,7 @@ class _CommunityWorkoutCard extends StatefulWidget {
     required this.onFollowCreator,
     this.onDelete,
     this.isOwner = false,
+    this.isAdmin = false,
   });
 
   final CommunityWorkout workout;
@@ -646,6 +649,7 @@ class _CommunityWorkoutCard extends StatefulWidget {
   final VoidCallback onFollowCreator;
   final VoidCallback? onDelete;
   final bool isOwner;
+  final bool isAdmin;
 
   @override
   State<_CommunityWorkoutCard> createState() => _CommunityWorkoutCardState();
@@ -741,7 +745,7 @@ class _CommunityWorkoutCardState extends State<_CommunityWorkoutCard> {
                     ),
                   ),
                 ),
-                if (widget.isOwner && widget.onDelete != null) ...[
+                if ((widget.isOwner || widget.isAdmin) && widget.onDelete != null) ...[
                   const SizedBox(width: 12),
                   GestureDetector(
                     onTap: widget.onDelete,
