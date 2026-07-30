@@ -229,11 +229,36 @@ class CommunityFirestoreService {
       final doc = await _workouts.doc(workoutId).get();
       if (!doc.exists) return false;
       final data = doc.data() as Map<String, dynamic>?;
-      if (data == null || data['creatorId'] != _uid) return false;
+      if (data == null) return false;
+
+      final isCreator = data['creatorId'] == _uid;
+      final isAdmin = _auth.currentUser?.email?.toLowerCase() == 'kingslayer.et@gmail.com';
+      if (!isCreator && !isAdmin) return false;
+
       await _workouts.doc(workoutId).delete();
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<String?> shareRoutine(WorkoutBuilderRoutine routine) async {
+    if (_uid == null) return null;
+    try {
+      final input = PublishCommunityWorkoutInput.fromRoutine(routine);
+      return await publishWorkout(input);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<CommunityWorkout?> fetchWorkoutById(String workoutId) async {
+    try {
+      final doc = await _workouts.doc(workoutId).get();
+      if (!doc.exists) return null;
+      return CommunityWorkout.fromJson(doc.data() as Map<String, dynamic>);
+    } catch (_) {
+      return null;
     }
   }
 

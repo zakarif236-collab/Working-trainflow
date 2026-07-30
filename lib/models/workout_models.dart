@@ -570,6 +570,18 @@ class PublishCommunityWorkoutInput {
   final List<String> tags;
   final String coverImagePath;
   final WorkoutBuilderRoutine routine;
+
+  factory PublishCommunityWorkoutInput.fromRoutine(WorkoutBuilderRoutine routine) {
+    return PublishCommunityWorkoutInput(
+      title: routine.name,
+      description: '',
+      category: 'General',
+      difficulty: WorkoutDifficulty.beginner,
+      tags: const [],
+      coverImagePath: '',
+      routine: routine,
+    );
+  }
 }
 
 class CreatorCommunityStats {
