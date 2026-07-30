@@ -10,9 +10,14 @@ import 'package:my_app/pages/workout_builder_player_page.dart';
 import 'package:my_app/pages/workout_timer_page.dart';
 import 'package:my_app/firebase_options.dart';
 import 'package:my_app/services/auth_service.dart';
+import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/notification_service.dart';
 import 'package:my_app/services/push_notification_service.dart';
+import 'package:my_app/services/deep_link_service.dart';
+import 'package:my_app/services/workout_foreground_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -24,16 +29,38 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   try {
-    await AuthService().signInAnonymously();
+    await WorkoutForegroundService.cancelStaleNotifications();
+  } catch (_) {}
+
+  final authService = AuthService();
+  try {
+    await authService.init();
   } catch (_) {
-    // Anonymous sign-in is best-effort; the app works without it,
-    // but some Firestore features will be unavailable until real sign-in.
+    debugPrint('AuthService.init failed — proceeding with default state');
+  }
+
+  await ConnectivityService.instance.initialize();
+
+  if (!authService.hasFirebaseSession) {
+    if (ConnectivityService.instance.isOnline) {
+      try {
+        await authService.signInAnonymously();
+      } catch (_) {
+        debugPrint('[main] Firebase Auth unavailable, using local UID fallback');
+      }
+    } else {
+      debugPrint('[main] Offline — skipping anonymous sign-in, using local UID fallback');
+    }
   }
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   await NotificationService.instance.load();
-  await PushNotificationService.instance.initialize();
+  try {
+    await PushNotificationService.instance.initialize().timeout(const Duration(seconds: 5));
+  } catch (_) {
+    debugPrint('[main] PushNotification init skipped (offline or timeout)');
+  }
 
   assert(() {
     if (GeminiConfig.isConfigured) {
@@ -44,8 +71,10 @@ Future<void> main() async {
     return true;
   }());
 
-  final authService = AuthService();
   runApp(MyApp(authService: authService));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    DeepLinkService.instance.init(navigatorKey);
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -62,6 +91,7 @@ class MyApp extends StatelessWidget {
     );
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Workout Builder',
       theme: base.copyWith(
