@@ -70,7 +70,7 @@ class _MainShellPageState extends State<MainShellPage> {
 
   Future<void> _onTabSelected(int index) async {
     if (index == 3) {
-      if (_authService.currentUserId == null) {
+      if (!_authService.hasFirebaseSession) {
         final signedIn = await AuthPage.showAsSheet(context);
         if (signedIn != true || !mounted) return;
         OnboardingSheet.showIfNeeded(context, _authService);

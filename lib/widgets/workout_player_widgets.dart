@@ -221,9 +221,6 @@ class ActionControls extends StatelessWidget {
     required this.onStartPause,
     required this.onReset,
     required this.onSkip,
-    required this.onMusicToggle,
-    required this.isMusicPlaying,
-    this.songName,
   });
 
   final bool running;
@@ -231,9 +228,6 @@ class ActionControls extends StatelessWidget {
   final VoidCallback onStartPause;
   final VoidCallback onReset;
   final VoidCallback onSkip;
-  final VoidCallback onMusicToggle;
-  final bool isMusicPlaying;
-  final String? songName;
 
   @override
   Widget build(BuildContext context) {
@@ -260,44 +254,6 @@ class ActionControls extends StatelessWidget {
               onPressed: onSkip,
             ),
           ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: onMusicToggle,
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              foregroundColor: isMusicPlaying
-                  ? const Color(0xFFFF8A1E)
-                  : Colors.white70,
-              backgroundColor: isMusicPlaying
-                  ? const Color(0xFFFF8A1E).withValues(alpha: 0.1)
-                  : Colors.white.withValues(alpha: 0.06),
-              side: BorderSide(
-                color: isMusicPlaying
-                    ? const Color(0xFFFF8A1E).withValues(alpha: 0.3)
-                    : Colors.white.withValues(alpha: 0.12),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            icon: Icon(
-              isMusicPlaying ? Icons.stop_rounded : Icons.music_off_rounded,
-              size: 20,
-            ),
-            label: Text(
-              isMusicPlaying
-                  ? (songName != null ? 'Stop  ${songName!}' : 'Music Playing')
-                  : 'Play Music',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ),
         ),
       ],
     );

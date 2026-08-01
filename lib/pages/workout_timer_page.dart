@@ -75,7 +75,7 @@ class WorkoutTimerPage extends StatefulWidget {
 }
 
 class _WorkoutTimerPageState extends State<WorkoutTimerPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final WorkoutController _controller;
   late final MusicService _musicService;
   late final AudioEngine _audioEngine;
@@ -111,6 +111,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = WorkoutController();
     _musicService = MusicService();
     _settingsService = SettingsService();
@@ -162,7 +163,19 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      if (_hasStarted && _controller.isRunning) {
+        WorkoutForegroundService.instance.promoteToForeground();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      WorkoutForegroundService.instance.demoteToBackground();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     try { WorkoutForegroundService.instance.stop(); } catch (_) {}
     _settingsPersistDebounce?.cancel();
@@ -605,7 +618,6 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         setState(() {
           _selectedIntensity = _launchConfig!.intensity;
         });
-        _scheduleSettingsPersist();
       }
     } catch (e) {
       if (mounted) {
@@ -615,6 +627,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   }
 
   void _scheduleSettingsPersist() {
+    if (_launchConfig != null) return;
     _settingsPersistDebounce?.cancel();
     _settingsPersistDebounce = Timer(
       const Duration(milliseconds: 300),

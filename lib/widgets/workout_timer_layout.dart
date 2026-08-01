@@ -155,8 +155,6 @@ class WorkoutTimerLayout extends StatelessWidget {
                 onStartPause: onStartPause,
                 onReset: onReset,
                 onSkip: onSkip,
-                onMusicToggle: () {},
-                isMusicPlaying: false,
               ),
               if (musicControls != null) ...[
                 const SizedBox(height: 12),

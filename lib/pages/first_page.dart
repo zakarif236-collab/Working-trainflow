@@ -50,9 +50,7 @@ class _FirstPageState extends State<FirstPage> {
       final uid = authService.currentUserId;
 
       WorkoutInsights? insights;
-      if (uid != null) {
-        insights = await _settingsService.loadInsightsFromFirestore(uid);
-      }
+      insights = await _settingsService.loadInsightsFromFirestore(uid);
 
       insights ??= await _settingsService.loadInsights();
 
@@ -161,10 +159,8 @@ class _FirstPageState extends State<FirstPage> {
 
     final authService = AuthService();
     final uid = authService.currentUserId;
-    if (uid != null) {
-      final updatedInsights = await _settingsService.loadInsights();
-      await _settingsService.saveInsightsToFirestore(uid, updatedInsights);
-    }
+    final updatedInsights = await _settingsService.loadInsights();
+    await _settingsService.saveInsightsToFirestore(uid, updatedInsights);
 
     if (mounted) {
       await _loadInsights();

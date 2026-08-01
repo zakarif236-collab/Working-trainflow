@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:my_app/add/ad_helper.dart';
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/settings_service.dart';
@@ -15,11 +17,79 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final SettingsService _settingsService = SettingsService();
   WorkoutBuilderResumeSession? _resumeSession;
+  BannerAd? _bannerAd;
+  InterstitialAd? _interstitialAd;
 
   @override
   void initState() {
     super.initState();
     _refreshResumeSession();
+    _loadBannerAd();
+    _loadInterstitialAd();
+  }
+
+  void _loadInterstitialAd() {
+    InterstitialAd.load(
+      adUnitId: AdHelper.interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _loadInterstitialAd();
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _loadInterstitialAd();
+            },
+          );
+          setState(() {
+            _interstitialAd = ad;
+          });
+        },
+        onAdFailedToLoad: (error) {
+          print('Failed to load ad: $error');
+        },
+      ),
+    );
+  }
+
+  void _showInterstitialAd() {
+    final ad = _interstitialAd;
+    if (ad == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ad not ready yet')),
+      );
+      return;
+    }
+    ad.show();
+  }
+
+  void _loadBannerAd() {
+    final bannerAd = BannerAd(
+      adUnitId: AdHelper.bannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _bannerAd = ad as BannerAd;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+        },
+      ),
+    );
+    bannerAd.load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _interstitialAd?.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshResumeSession() async {
@@ -130,99 +200,122 @@ class _HomePageState extends State<HomePage> {
     final canResume = _resumeSession != null;
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showInterstitialAd,
+        icon: const Icon(Icons.play_circle_outline),
+        label: const Text('Watch Ad'),
+      ),
+      body: Stack(
+        children: [
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
+              ),
+            ),
+            child: SafeArea(
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 28, 20, 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Mods',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Train smarter, not harder.',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.0,
+                      ),
+                      delegate: SliverChildListDelegate([
+                        _ModCard(
+                          title: 'Quick Start',
+                          subtitle: 'Jump right in',
+                          icon: Icons.play_circle_fill_rounded,
+                          gradient: const [Color(0xFFFF6B8A), Color(0xFFF2A6A6)],
+                          onTap: () => _openTrainingLauncher(context),
+                        ),
+                        _ModCard(
+                          title: 'Workout Builder',
+                          subtitle: 'Create routines',
+                          icon: Icons.bolt_rounded,
+                          gradient: const [Color(0xFF4ADE80), Color(0xFF86E3A4)],
+                          onTap: () => _openWorkoutBuilder(context),
+                        ),
+                        _ModCard(
+                          title: 'My Workouts',
+                          subtitle: 'Your library',
+                          icon: Icons.library_books_rounded,
+                          gradient: const [Color(0xFF60A5FA), Color(0xFF9BC4FF)],
+                          onTap: () => _openMyWorkouts(context),
+                        ),
+                        _ModCard(
+                          title: 'Community',
+                          subtitle: ConnectivityService.instance.isOnline
+                              ? 'Share & discover'
+                              : 'Sign in when online',
+                          icon: Icons.public_rounded,
+                          gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
+                          onTap: ConnectivityService.instance.isOnline
+                              ? () => _openCommunity(context)
+                              : null,
+                        ),
+                        if (canResume)
+                          _ModCard(
+                            title: 'Resume',
+                            subtitle: 'Continue last session',
+                            icon: Icons.playlist_play_rounded,
+                            gradient: const [Color(0xFFFBBF24), Color(0xFFF9C97A)],
+                            onTap: () => _resumeLastWorkout(context),
+                          ),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
+          if (_bannerAd != null)
+            Align(
+              alignment: Alignment.topCenter,
+              child: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Mods',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Train smarter, not harder.',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.only(top: 90),
+                  child: SizedBox(
+                    width: _bannerAd!.size.width.toDouble(),
+                    height: _bannerAd!.size.height.toDouble(),
+                    child: AdWidget(ad: _bannerAd!),
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.0,
-                  ),
-                  delegate: SliverChildListDelegate([
-                    _ModCard(
-                      title: 'Quick Start',
-                      subtitle: 'Jump right in',
-                      icon: Icons.play_circle_fill_rounded,
-                      gradient: const [Color(0xFFFF6B8A), Color(0xFFF2A6A6)],
-                      onTap: () => _openTrainingLauncher(context),
-                    ),
-                    _ModCard(
-                      title: 'Workout Builder',
-                      subtitle: 'Create routines',
-                      icon: Icons.bolt_rounded,
-                      gradient: const [Color(0xFF4ADE80), Color(0xFF86E3A4)],
-                      onTap: () => _openWorkoutBuilder(context),
-                    ),
-                    _ModCard(
-                      title: 'My Workouts',
-                      subtitle: 'Your library',
-                      icon: Icons.library_books_rounded,
-                      gradient: const [Color(0xFF60A5FA), Color(0xFF9BC4FF)],
-                      onTap: () => _openMyWorkouts(context),
-                    ),
-                    _ModCard(
-                      title: 'Community',
-                      subtitle: ConnectivityService.instance.isOnline
-                          ? 'Share & discover'
-                          : 'Sign in when online',
-                      icon: Icons.public_rounded,
-                      gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
-                      onTap: ConnectivityService.instance.isOnline
-                          ? () => _openCommunity(context)
-                          : null,
-                    ),
-                    if (canResume)
-                      _ModCard(
-                        title: 'Resume',
-                        subtitle: 'Continue last session',
-                        icon: Icons.playlist_play_rounded,
-                        gradient: const [Color(0xFFFBBF24), Color(0xFFF9C97A)],
-                        onTap: () => _resumeLastWorkout(context),
-                      ),
-                  ]),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

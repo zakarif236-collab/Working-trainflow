@@ -152,7 +152,7 @@ class _WorkoutSchedulePageState extends State<WorkoutSchedulePage> {
         ),
         value: _schedule.enabled,
         onChanged: _toggleEnabled,
-        activeColor: const Color(0xFF2AB7CA),
+        activeThumbColor: const Color(0xFF2AB7CA),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
     );

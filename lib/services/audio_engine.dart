@@ -47,12 +47,10 @@ class _AudioQueue {
 
 class AudioEngine {
   AudioEngine({
-    required GeminiVoiceService voice,
-    required SfxService sfx,
-    MusicService? music,
-  })  : _voice = voice,
-        _sfx = sfx,
-        _music = music;
+    required this._voice,
+    required this._sfx,
+    this._music,
+  });
 
   final GeminiVoiceService _voice;
   final SfxService _sfx;

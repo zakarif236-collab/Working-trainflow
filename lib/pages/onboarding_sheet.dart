@@ -58,20 +58,18 @@ class _OnboardingSheetState extends State<OnboardingSheet> {
     try {
       final uid = widget.authService.currentUserId;
       final displayName = _usernameController.text.trim();
-      if (uid != null) {
-        if (displayName.isNotEmpty) {
-          await UserProfileService().updateProfile(uid, {'displayName': displayName});
-          final settings = SettingsService();
-          await settings.saveDisplayName(displayName);
-        }
-        if (_profileImagePath != null && _profileImagePath!.trim().isNotEmpty) {
-          await UserProfileService().updateProfile(uid, {'profileImagePath': _profileImagePath});
-          final settings = SettingsService();
-          await settings.saveProfileImagePath(_profileImagePath!);
-        }
-        if (_selectedGoal != null) {
-          await UserProfileService().updateProfile(uid, {'fitnessGoal': _selectedGoal!.name});
-        }
+      if (displayName.isNotEmpty) {
+        await UserProfileService().updateProfile(uid, {'displayName': displayName});
+        final settings = SettingsService();
+        await settings.saveDisplayName(displayName);
+      }
+      if (_profileImagePath != null && _profileImagePath!.trim().isNotEmpty) {
+        await UserProfileService().updateProfile(uid, {'profileImagePath': _profileImagePath});
+        final settings = SettingsService();
+        await settings.saveProfileImagePath(_profileImagePath!);
+      }
+      if (_selectedGoal != null) {
+        await UserProfileService().updateProfile(uid, {'fitnessGoal': _selectedGoal!.name});
       }
       await widget.authService.markOnboardingComplete();
       if (mounted) Navigator.of(context).pop();

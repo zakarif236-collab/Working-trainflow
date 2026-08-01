@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+@pragma('vm:entry-point')
 class WorkoutForegroundService {
   WorkoutForegroundService._();
 
@@ -31,7 +32,17 @@ class WorkoutForegroundService {
   bool _isPaused = false;
   bool _isMusicPlaying = false;
 
-  /// Start the foreground service and show notification
+  /// Cancel any stale notification (call on app launch to clean up leftovers)
+  static Future<void> cancelStaleNotifications() async {
+    final plugin = FlutterLocalNotificationsPlugin();
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidSettings);
+    await plugin.initialize(initSettings);
+    await plugin.cancel(_notificationId);
+  }
+
+  /// Start the background service (keeps timer alive in background).
+  /// No notification is shown until [promoteToForeground] is called.
   Future<void> start({
     required String workoutName,
     required String exerciseName,
@@ -51,11 +62,12 @@ class WorkoutForegroundService {
     _isMusicPlaying = isMusicPlaying;
 
     await _initLocalNotifications();
+    await _createNotificationChannel();
     await _service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: _onStart,
         autoStart: false,
-        isForegroundMode: true,
+        isForegroundMode: false,
         notificationChannelId: _channelId,
         initialNotificationTitle: _workoutName,
         initialNotificationContent: _exerciseName,
@@ -68,11 +80,22 @@ class WorkoutForegroundService {
 
     await _service.startService();
     _isRunning = true;
-
-    await _showNotification();
   }
 
-  /// Stop the foreground service and remove notification
+  /// Promote to foreground — shows the notification (call when app goes to background).
+  Future<void> promoteToForeground() async {
+    if (!_isRunning) return;
+    _updateForegroundNotificationInfo();
+    _service.invoke('setAsForeground');
+  }
+
+  /// Demote to background — hides the notification (call when app returns to foreground).
+  Future<void> demoteToBackground() async {
+    if (!_isRunning) return;
+    _service.invoke('setAsBackground');
+  }
+
+  /// Stop the service and remove notification
   Future<void> stop() async {
     if (!_isRunning) return;
 
@@ -82,7 +105,7 @@ class WorkoutForegroundService {
     await _localNotifications.cancel(_notificationId);
   }
 
-  /// Update notification with new workout state
+  /// Update workout state
   Future<void> update({
     String? exerciseName,
     int? remainingSeconds,
@@ -99,8 +122,19 @@ class WorkoutForegroundService {
     if (isMusicPlaying != null) _isMusicPlaying = isMusicPlaying;
 
     if (_isRunning) {
-      await _showNotification();
+      _updateForegroundNotificationInfo();
     }
+  }
+
+  void _updateForegroundNotificationInfo() {
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
+    final setStr = 'Set $_currentSet/$_totalSets';
+    _service.invoke('setNotificationInfo', {
+      'title': _workoutName,
+      'content': '$_exerciseName • $setStr • $timeStr',
+    });
   }
 
   /// Initialize local notifications
@@ -110,44 +144,17 @@ class WorkoutForegroundService {
     await _localNotifications.initialize(initSettings);
   }
 
-  /// Show/update the persistent notification
-  Future<void> _showNotification() async {
-    final minutes = _remainingSeconds ~/ 60;
-    final seconds = _remainingSeconds % 60;
-    final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
-    final setStr = 'Set $_currentSet/$_totalSets';
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Shows workout progress and controls',
-      importance: Importance.high,
-      priority: Priority.high,
-      ongoing: true,
-      autoCancel: false,
-      icon: '@mipmap/ic_launcher',
-      color: const Color(0xFFFF8A1E),
-      actions: <AndroidNotificationAction>[
-        if (_isPaused)
-          const AndroidNotificationAction('resume', 'Resume', showsUserInterface: false)
-        else
-          const AndroidNotificationAction('pause', 'Pause', showsUserInterface: false),
-        const AndroidNotificationAction('skip', 'Skip', showsUserInterface: false),
-        const AndroidNotificationAction('stop', 'Stop', showsUserInterface: false),
-        if (_isMusicPlaying)
-          const AndroidNotificationAction('music_stop', 'Music Off', showsUserInterface: false)
-        else
-          const AndroidNotificationAction('music_toggle', 'Music', showsUserInterface: false),
-      ],
-    );
-
-    final details = NotificationDetails(android: androidDetails);
-
-    await _localNotifications.show(
-      _notificationId,
-      _workoutName,
-      '$_exerciseName • $setStr • $timeStr',
-      details,
+  Future<void> _createNotificationChannel() async {
+    final android = _localNotifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    await android.createNotificationChannel(
+      AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: 'Shows workout progress and controls',
+        importance: Importance.high,
+      ),
     );
   }
 
@@ -157,8 +164,6 @@ class WorkoutForegroundService {
     DartPluginRegistrant.ensureInitialized();
 
     if (service is AndroidServiceInstance) {
-      service.setAsForegroundService();
-
       service.on('setAsForeground').listen((_) {
         service.setAsForegroundService();
       });
@@ -172,20 +177,20 @@ class WorkoutForegroundService {
       service.stopSelf();
     });
 
+    // Forward notification info updates from main isolate to native
+    service.on('setNotificationInfo').listen((data) {
+      if (data != null && service is AndroidServiceInstance) {
+        service.setForegroundNotificationInfo(
+          title: data['title'] as String? ?? 'Workout Timer',
+          content: data['content'] as String? ?? 'Timer running...',
+        );
+      }
+    });
+
     // Handle notification action callbacks from main isolate
     service.on('action').listen((event) {
       if (event != null) {
         _actionStreamController.add(event['action'] as String);
-      }
-    });
-
-    // Keep service alive
-    Timer.periodic(const Duration(seconds: 30), (_) async {
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'Workout Timer',
-          content: 'Timer running...',
-        );
       }
     });
   }

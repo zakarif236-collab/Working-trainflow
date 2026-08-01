@@ -358,7 +358,7 @@ class _CommunityPageState extends State<CommunityPage>
   }
 
   Future<void> _deleteWorkout(CommunityWorkout workout) async {
-    if (!await _requireAuth()) return;
+    if (!await _requireAuth() || !mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
