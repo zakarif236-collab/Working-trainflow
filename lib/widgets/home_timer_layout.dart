@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/widgets/circular_countdown.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
+import 'package:my_app/widgets/header_banner_ad.dart';
 import 'package:my_app/widgets/workout_timeline.dart';
 
 class HomeTimerLayout extends StatelessWidget {
@@ -129,6 +130,8 @@ class HomeTimerLayout extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 10),
+              const HeaderBannerAd(),
             ],
           ),
         ),
@@ -208,8 +211,6 @@ class HomeTimerLayout extends StatelessWidget {
                 onStartPause: onStartPause,
                 onReset: onReset,
                 onSkip: onSkip,
-                onMusicToggle: () {},
-                isMusicPlaying: false,
               ),
               if (musicControls != null) ...[
                 const SizedBox(height: 12),
