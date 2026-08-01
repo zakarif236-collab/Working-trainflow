@@ -2,9 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:my_app/add/ad_helper.dart';
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/services/community_firestore_service.dart';
 import 'package:my_app/services/settings_service.dart';
+import 'package:my_app/widgets/earn_points_card.dart';
 
 class WorkoutBuilderPage extends StatefulWidget {
   const WorkoutBuilderPage({super.key, this.showBuilder = true});
@@ -19,12 +24,21 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   final SettingsService _settingsService = SettingsService();
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _importLinkController = TextEditingController();
+  final CommunityFirestoreService _communityService = CommunityFirestoreService.instance;
+  bool _importing = false;
 
   List<_WorkoutDraftExercise> _draftExercises = [_WorkoutDraftExercise()];
   List<WorkoutBuilderRoutine> _savedRoutines = const [];
   bool _loadingSaved = true;
   String? _editingRoutineId;
   bool _didHandleRouteArgs = false;
+  static const int _kMaxDailyAdWatches = 5;
+
+  int _builderBuildsRemaining = 1;
+  int _todayAdWatches = 0;
+  RewardedAd? _rewardedAd;
+  VoidCallback? _pendingReward;
 
   bool get _isEditing => _editingRoutineId != null;
 
@@ -37,6 +51,88 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   void initState() {
     super.initState();
     _loadSavedRoutines();
+    _loadBuilderBuildsRemaining();
+    _loadAdWatchCountForToday();
+    _loadRewardedAd();
+  }
+
+  Future<void> _loadBuilderBuildsRemaining() async {
+    final remaining = await _settingsService.loadBuilderBuildsRemaining();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _builderBuildsRemaining = remaining;
+    });
+  }
+
+  Future<void> _loadAdWatchCountForToday() async {
+    final count = await _settingsService.loadAdWatchCountForToday();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _todayAdWatches = count;
+    });
+  }
+
+  void _watchAdForPoint() {
+    _showRewardedAd(() async {
+      await _settingsService.recordAdWatchForToday();
+      await _settingsService.addBuilderBuilds(1);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _todayAdWatches += 1;
+      });
+      await _loadBuilderBuildsRemaining();
+    });
+  }
+
+  void _loadRewardedAd() {
+    RewardedAd.load(
+      adUnitId: AdHelper.rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          setState(() {
+            _rewardedAd = ad;
+          });
+        },
+        onAdFailedToLoad: (error) {
+          print('Failed to load rewarded ad: $error');
+        },
+      ),
+    );
+  }
+
+  void _showRewardedAd(VoidCallback onReward) {
+    final ad = _rewardedAd;
+    if (ad == null) {
+      _showMessage('Rewarded ad not ready yet. Try again in a moment.');
+      _loadRewardedAd();
+      return;
+    }
+    _pendingReward = onReward;
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _loadRewardedAd();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        _loadRewardedAd();
+        _showMessage('Rewarded ad failed to show. Try again.');
+      },
+    );
+    ad.show(
+      onUserEarnedReward: (ad, reward) {
+        final callback = _pendingReward;
+        _pendingReward = null;
+        callback?.call();
+      },
+    );
   }
 
   @override
@@ -56,6 +152,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _rewardedAd?.dispose();
     super.dispose();
   }
 
@@ -120,8 +217,6 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     try {
       final picked = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1600,
-        imageQuality: 88,
       );
       if (picked == null || !mounted) {
         return;
@@ -205,6 +300,64 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
       exercises: exercises,
     );
 
+    if (!wasEditing) {
+      final remaining = await _settingsService.loadBuilderBuildsRemaining();
+      if (remaining > 0) {
+        await _settingsService.consumeBuilderBuild();
+        await _loadBuilderBuildsRemaining();
+      } else {
+        final shouldWatch = await _promptWatchAdForBuild();
+        if (!shouldWatch || !mounted) {
+          return;
+        }
+        _showRewardedAd(() async {
+          await _settingsService.addBuilderBuilds(1);
+          await _settingsService.consumeBuilderBuild();
+          if (!mounted) {
+            return;
+          }
+          await _loadBuilderBuildsRemaining();
+          await _persistRoutine(routine, wasEditing: false);
+        });
+        return;
+      }
+    }
+
+    await _persistRoutine(routine, wasEditing: wasEditing);
+  }
+
+  Future<bool> _promptWatchAdForBuild() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF101A2B),
+          title: const Text('Free build used'),
+          content: const Text(
+            'You have used your free workout build. '
+            'Watch a rewarded ad to unlock 1 extra build?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.play_circle_outline),
+              label: const Text('Watch Ad'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<void> _persistRoutine(
+    WorkoutBuilderRoutine routine, {
+    required bool wasEditing,
+  }) async {
     _upsertRoutineLocally(routine);
     await _settingsService.saveWorkoutBuilderRoutine(routine);
     _clearDraft();
@@ -251,6 +404,19 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     );
   }
 
+  Future<void> _copyLink(WorkoutBuilderRoutine routine) async {
+    final firestoreId = await CommunityFirestoreService.instance.shareRoutine(routine);
+    if (!mounted) return;
+    if (firestoreId == null) {
+      _showMessage('Failed to share. Check your connection.');
+      return;
+    }
+    final link = 'fitpulse://workout/$firestoreId';
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) return;
+    _showMessage('Link copied: $link');
+  }
+
   String _formatDuration(int seconds) {
     final minutes = seconds ~/ 60;
     final remainder = seconds % 60;
@@ -270,6 +436,39 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> _importWorkout() async {
+    final link = _importLinkController.text.trim();
+    if (link.isEmpty) return;
+    final match = RegExp(r'fitpulse://workout/(.+)').firstMatch(link);
+    if (match == null) {
+      _showMessage('Invalid link format. Use fitpulse://workout/{id}');
+      return;
+    }
+    final workoutId = match.group(1)!;
+    setState(() => _importing = true);
+    try {
+      final communityWorkout = await _communityService.fetchWorkoutById(workoutId);
+      if (communityWorkout == null) {
+        _showMessage('Workout not found. Check the link.');
+        return;
+      }
+      final routine = WorkoutBuilderRoutine(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: communityWorkout.title,
+        createdAt: DateTime.now(),
+        exercises: communityWorkout.exercises,
+      );
+      await _settingsService.saveWorkoutBuilderRoutine(routine);
+      await _loadSavedRoutines();
+      _importLinkController.clear();
+      _showMessage('"${routine.name}" imported to My Workouts.');
+    } catch (_) {
+      _showMessage('Failed to import workout.');
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
   }
 
   @override
@@ -293,6 +492,15 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 30),
           children: [
             if (widget.showBuilder) ...[
+              EarnPointsCard(
+                buildPoints: _builderBuildsRemaining,
+                todayWatches: _todayAdWatches,
+                maxDailyWatches: _kMaxDailyAdWatches,
+                onWatchAd: _todayAdWatches >= _kMaxDailyAdWatches
+                    ? null
+                    : _watchAdForPoint,
+              ),
+              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -319,6 +527,12 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                             onPressed: _clearDraft,
                             icon: const Icon(Icons.close_rounded),
                             label: const Text('Cancel'),
+                          )
+                        else
+                          _SummaryChip(
+                            icon: Icons.build_rounded,
+                            label: '$_builderBuildsRemaining '
+                                '${_builderBuildsRemaining == 1 ? 'build' : 'builds'} left',
                           ),
                       ],
                     ),
@@ -395,6 +609,54 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                 ),
               ),
               const SizedBox(height: 20),
+            ],
+            if (widget.showBuilder) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Import from Link',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _importLinkController,
+                            decoration: const InputDecoration(
+                              hintText: 'Paste fitpulse://workout/{id}',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: _importing ? null : _importWorkout,
+                          icon: _importing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_rounded, size: 20),
+                          label: const Text('Import'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
             ] else ...[
               SizedBox(
                 width: double.infinity,
@@ -450,6 +712,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
                       ),
                     );
                   },
+                  onCopyLink: () => _copyLink(routine),
                   onEdit: () {
                     if (widget.showBuilder) {
                       _editRoutine(routine);
@@ -724,6 +987,7 @@ class _SavedRoutineCard extends StatelessWidget {
     required this.onEdit,
     required this.onDuplicate,
     required this.onDelete,
+    required this.onCopyLink,
     required this.formatDuration,
   });
 
@@ -733,6 +997,7 @@ class _SavedRoutineCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+  final VoidCallback onCopyLink;
   final String Function(int seconds) formatDuration;
 
   @override
@@ -759,6 +1024,9 @@ class _SavedRoutineCard extends StatelessWidget {
                       case 'publish':
                         onPublish();
                         break;
+                      case 'copyLink':
+                        onCopyLink();
+                        break;
                       case 'edit':
                         onEdit();
                         break;
@@ -777,6 +1045,14 @@ class _SavedRoutineCard extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(Icons.public_rounded),
                         title: Text('Publish to Community'),
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'copyLink',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.link_rounded),
+                        title: Text('Copy Link'),
                       ),
                     ),
                     PopupMenuItem<String>(
