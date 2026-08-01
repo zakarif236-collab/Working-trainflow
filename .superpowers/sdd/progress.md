@@ -30,3 +30,11 @@
 
 ## Completion
 - USER: Keep branch feat/hybrid-signin-offline as-is. Feature commits eaac52c / 66303f3 / cba9a6c remain on branch. Final test run: 13 pass, 3 pre-existing widget_test.dart Firebase [core/no-app] failures (unrelated, out of scope). DONE.
+
+## WIP cleanup (USER: "commit everything")
+- Discarded: android/build (untracked build junk), third_party/flutter_tts/android/.gradle cache changes (reverted to HEAD).
+- Commit 0d7db69 (feat: add AdMob infrastructure): pubspec.yaml/lock (+google_mobile_ads), lib/main.dart (MobileAds.initialize), lib/add/ad_helper.dart (new), AndroidManifest.xml (AdMob app id), proguard-rules.pro, macos GeneratedPluginRegistrant.swift. CRITICAL: committed code already imported google_mobile_ads/ad_helper; this commit made the branch build standalone.
+- Commit 8b3d495 (chore: update app launcher icons and logo): assets/exercises/images/app_logo.png + android/app/icons/ (new), all mipmap/iOS AppIcon pngs, logo.png removed.
+- Commit 3d003d4 (feat: hybrid sign-in with offline device uid, foreground service rework, timer/ad layout updates): auth_service, workout_foreground_service, audio_engine, community/first/home/main_shell/onboarding/schedule/timer pages, workout_player_widgets, workout_timer_layout, test/builder_builds_test.dart (new).
+- Commit e70bf4e (docs: update superpowers progress ledger and task briefs/reports): .superpowers/sdd process files.
+- Verification: working tree CLEAN; flutter analyze 13 issues (infos + 2 unused_field warnings in workout_foreground_service, pre-existing pattern); flutter test 13 pass / 3 pre-existing widget_test.dart Firebase failures (no regressions).
