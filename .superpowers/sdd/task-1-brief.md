@@ -1,98 +1,157 @@
-# Task 1: WorkoutSchedule Model
+### Task 1: `SettingsService` — daily ad-watch persistence
 
 **Files:**
-- Create: `lib/models/workout_schedule.dart`
+- Modify: `lib/services/settings_service.dart` (add two methods after `addBuilderBuilds` ~line 168; add `_dateKey` helper near `_epochDay` ~line 949; add the `_kBuilderAdWatches` key constant near line 1059)
+- Test: `test/builder_ad_watches_test.dart` (new)
 
 **Interfaces:**
-- Produces: `WorkoutSchedule` class with `toJson()`, `fromJson()`, `copyWith()`
+- Produces:
+  - `Future<int> loadAdWatchCountForToday({DateTime? now})` — returns the count of rewarded ads watched today (0 when nothing stored, when the stored date is stale, or on corrupt JSON).
+  - `Future<void> recordAdWatchForToday({DateTime? now})` — increments today's count in storage.
+  - The optional `now` param enables deterministic tests, matching the existing `shouldSendMissedWorkoutReminder({DateTime? now})` pattern. Callers use the default (`DateTime.now()`).
+  - Consumed by Task 3 (`_loadAdWatchCountForToday`, `_watchAdForPoint`).
 
-- [ ] **Step 1: Create the model file**
+- [ ] **Step 1: Write the failing test**
+
+Create `test/builder_ad_watches_test.dart`:
 
 ```dart
-import 'dart:convert';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:my_app/services/settings_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class WorkoutSchedule {
-  const WorkoutSchedule({
-    this.enabled = false,
-    this.days = const [],       // 1=Monday..7=Sunday (DateTime weekday values)
-    this.hour = 8,
-    this.minute = 0,
-    this.frequencyPerWeek = 3,  // how many of the selected days to actually notify
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('loadAdWatchCountForToday returns 0 when no data is stored', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsService();
+
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 1)), 0);
   });
 
-  final bool enabled;
-  final List<int> days;
-  final int hour;
-  final int minute;
-  final int frequencyPerWeek;
+  test('loadAdWatchCountForToday returns the count for the stored day',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'builder.adWatches': '{"date":"2026-08-01","count":3}',
+    });
+    final settings = SettingsService();
 
-  WorkoutSchedule copyWith({
-    bool? enabled,
-    List<int>? days,
-    int? hour,
-    int? minute,
-    int? frequencyPerWeek,
-  }) {
-    return WorkoutSchedule(
-      enabled: enabled ?? this.enabled,
-      days: days ?? this.days,
-      hour: hour ?? this.hour,
-      minute: minute ?? this.minute,
-      frequencyPerWeek: frequencyPerWeek ?? this.frequencyPerWeek,
-    );
-  }
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 1)), 3);
+  });
 
-  Map<String, dynamic> toJson() => {
-    'enabled': enabled,
-    'days': days,
-    'hour': hour,
-    'minute': minute,
-    'frequencyPerWeek': frequencyPerWeek,
-  };
+  test('loadAdWatchCountForToday resets to 0 on a new calendar day', () async {
+    SharedPreferences.setMockInitialValues({
+      'builder.adWatches': '{"date":"2026-08-01","count":3}',
+    });
+    final settings = SettingsService();
 
-  factory WorkoutSchedule.fromJson(Map<String, dynamic> json) {
-    return WorkoutSchedule(
-      enabled: json['enabled'] as bool? ?? false,
-      days: (json['days'] as List<dynamic>?)?.cast<int>() ?? [],
-      hour: json['hour'] as int? ?? 8,
-      minute: json['minute'] as int? ?? 0,
-      frequencyPerWeek: json['frequencyPerWeek'] as int? ?? 3,
-    );
-  }
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 2)), 0);
+  });
 
-  String encode() => jsonEncode(toJson());
+  test('loadAdWatchCountForToday falls back to 0 on corrupt JSON', () async {
+    SharedPreferences.setMockInitialValues({
+      'builder.adWatches': 'not-json{',
+    });
+    final settings = SettingsService();
 
-  factory WorkoutSchedule.decode(String source) {
-    return WorkoutSchedule.fromJson(jsonDecode(source) as Map<String, dynamic>);
-  }
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 1)), 0);
+  });
 
-  String get timeLabel {
-    final h = hour > 12 ? hour - 12 : hour == 0 ? 12 : hour;
-    final ampm = hour >= 12 ? 'PM' : 'AM';
-    final m = minute.toString().padLeft(2, '0');
-    return '$h:$m $ampm';
-  }
+  test('recordAdWatchForToday increments across multiple calls', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsService();
 
-  static const dayNames = {
-    1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu',
-    5: 'Fri', 6: 'Sat', 7: 'Sun',
-  };
+    await settings.recordAdWatchForToday(now: DateTime(2026, 8, 1));
+    await settings.recordAdWatchForToday(now: DateTime(2026, 8, 1));
 
-  static const fullDayNames = {
-    1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday',
-    5: 'Friday', 6: 'Saturday', 7: 'Sunday',
-  };
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 1)), 2);
+  });
+
+  test('recordAdWatchForToday starts a fresh count on a new calendar day',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'builder.adWatches': '{"date":"2026-08-01","count":4}',
+    });
+    final settings = SettingsService();
+
+    await settings.recordAdWatchForToday(now: DateTime(2026, 8, 2));
+
+    expect(await settings.loadAdWatchCountForToday(now: DateTime(2026, 8, 2)), 1);
+  });
 }
 ```
 
-- [ ] **Step 2: Verify no analysis errors**
+- [ ] **Step 2: Run test to verify it fails**
 
-Run: `flutter analyze lib/models/workout_schedule.dart`
-Expected: No errors (info-level lints OK)
+Run: `flutter test test/builder_ad_watches_test.dart`
+Expected: FAIL — compile error "The method 'loadAdWatchCountForToday' isn't defined for the type 'SettingsService'".
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Write minimal implementation**
+
+In `lib/services/settings_service.dart`, insert right after the `addBuilderBuilds` method (which ends at line 168):
+
+```dart
+  Future<int> loadAdWatchCountForToday({DateTime? now}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString(_kBuilderAdWatches);
+    if (encoded == null || encoded.trim().isEmpty) {
+      return 0;
+    }
+
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) {
+        return 0;
+      }
+
+      if (decoded['date'] != _dateKey(now ?? DateTime.now())) {
+        return 0;
+      }
+
+      return (decoded['count'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> recordAdWatchForToday({DateTime? now}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await loadAdWatchCountForToday(now: now);
+    await prefs.setString(
+      _kBuilderAdWatches,
+      jsonEncode({'date': _dateKey(now ?? DateTime.now()), 'count': current + 1}),
+    );
+  }
+```
+
+Near `_epochDay` (line 949), add the date-key helper:
+
+```dart
+  String _dateKey(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+```
+
+In the key-constant block near line 1059, add after `_kBuilderBuildsInitialized`:
+
+```dart
+const _kBuilderAdWatches = 'builder.adWatches';
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/builder_ad_watches_test.dart`
+Expected: PASS (6 tests).
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add lib/models/workout_schedule.dart
-git commit -m "feat: add WorkoutSchedule model for weekly notification schedule"
+git add lib/services/settings_service.dart test/builder_ad_watches_test.dart
+git commit -m "feat: track daily rewarded ad watches in settings service"
 ```
+
+---
+
