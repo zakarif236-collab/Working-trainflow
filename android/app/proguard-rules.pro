@@ -16,3 +16,8 @@
 -keep class com.eyedeadevelopment.fluttertts.** { *; }
 -keep class com.lucasjosino.on_audio_query.** { *; }
 -dontwarn com.google.android.play.core.**
+
+# WorkManager (used by flutter_local_notifications / firebase_messaging)
+-keep class androidx.work.** { *; }
+-keep class androidx.room.** { *; }
+-dontwarn androidx.room.**

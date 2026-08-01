@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:my_app/config/gemini_config.dart';
 import 'package:my_app/pages/community_page.dart';
 import 'package:my_app/pages/first_page.dart';
@@ -27,6 +29,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // ✅ Initialize AdMob only on Android/iOS
+  if (Platform.isAndroid || Platform.isIOS) {
+    await MobileAds.instance.initialize();
+  }
 
   try {
     await WorkoutForegroundService.cancelStaleNotifications();
