@@ -140,6 +140,65 @@ class WorkoutSessionEntry {
 }
 
 class SettingsService {
+  Future<int> loadBuilderBuildsRemaining() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_kBuilderBuildsInitialized) != true) {
+      await prefs.setBool(_kBuilderBuildsInitialized, true);
+      if (!prefs.containsKey(_kBuilderBuildsRemaining)) {
+        await prefs.setInt(_kBuilderBuildsRemaining, 1);
+      }
+    }
+    return prefs.getInt(_kBuilderBuildsRemaining) ?? 0;
+  }
+
+  Future<int> consumeBuilderBuild() async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getInt(_kBuilderBuildsRemaining) ?? 0;
+    final next = (current - 1).clamp(0, 1 << 30);
+    await prefs.setInt(_kBuilderBuildsRemaining, next);
+    return next;
+  }
+
+  Future<int> addBuilderBuilds(int amount) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getInt(_kBuilderBuildsRemaining) ?? 0;
+    final next = current + amount;
+    await prefs.setInt(_kBuilderBuildsRemaining, next);
+    return next;
+  }
+
+  Future<int> loadAdWatchCountForToday({DateTime? now}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString(_kBuilderAdWatches);
+    if (encoded == null || encoded.trim().isEmpty) {
+      return 0;
+    }
+
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) {
+        return 0;
+      }
+
+      if (decoded['date'] != _dateKey(now ?? DateTime.now())) {
+        return 0;
+      }
+
+      return (decoded['count'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> recordAdWatchForToday({DateTime? now}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await loadAdWatchCountForToday(now: now);
+    await prefs.setString(
+      _kBuilderAdWatches,
+      jsonEncode({'date': _dateKey(now ?? DateTime.now()), 'count': current + 1}),
+    );
+  }
+
   Future<WorkoutBuilderResumeSession?> loadWorkoutBuilderResumeSession() async {
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString(_kWorkoutBuilderResumeSession);
@@ -924,6 +983,12 @@ class SettingsService {
     return normalized.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
   }
 
+  String _dateKey(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
   bool _isVo2MaxFourByFour(WorkoutConfig config) {
     return config.program == WorkoutProgram.vo2max ||
         (config.sets == 4 &&
@@ -1028,6 +1093,9 @@ const _kLastWorkoutEpochDay = 'insights.lastWorkoutEpochDay';
 const _kLastWorkoutMillis = 'insights.lastWorkoutMillis';
 const _kRecentSessions = 'insights.recentSessions';
 const _kLastReminderEpochDay = 'reminders.lastReminderEpochDay';
+const _kBuilderBuildsRemaining = 'builder.buildsRemaining';
+const _kBuilderBuildsInitialized = 'builder.buildsInitialized';
+const _kBuilderAdWatches = 'builder.adWatches';
 const _kWorkoutBuilderRoutines = 'profile.workoutBuilderRoutines';
 const _kWorkoutBuilderResumeSession = 'profile.workoutBuilderResumeSession';
 const _kCommunityWorkouts = 'community.workouts';
