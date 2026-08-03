@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/services/notification_service.dart';
 import 'package:my_app/pages/user_profile_page.dart';
-import 'package:my_app/pages/workout_schedule_page.dart';
+import 'package:my_app/widgets/workout_schedule_section.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -102,16 +102,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
         title: const Text('Activity'),
         backgroundColor: const Color(0xFF101A2B),
         actions: [
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const WorkoutSchedulePage()),
-              );
-            },
-            icon: Icon(Icons.calendar_month_rounded, size: 22),
-            tooltip: 'Workout schedule',
-            color: Colors.white.withValues(alpha: 0.6),
-          ),
           if (notifications.any((n) => !n.isRead))
             TextButton(
               onPressed: () => _notifService.markAllAsRead(),
@@ -126,33 +116,43 @@ class _NotificationsPageState extends State<NotificationsPage> {
             colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
           ),
         ),
-        child: notifications.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.notifications_none_rounded, size: 56, color: Colors.white.withValues(alpha: 0.2)),
-                    const SizedBox(height: 12),
-                    Text('No activity yet', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 16)),
-                  ],
-                ),
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                itemCount: notifications.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  final notif = notifications[index];
-                  return _NotificationTile(
-                    notification: notif,
-                    icon: _iconForType(notif.type),
-                    color: _colorForType(notif.type),
-                    actionText: _actionText(notif.type),
-                    timeAgo: _timeAgo(notif.createdAt),
-                    onTap: () => _onNotificationTap(notif),
-                  );
-                },
-              ),
+        child: Column(
+          children: [
+            const SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: WorkoutScheduleSection(),
+            ),
+            Expanded(
+              child: notifications.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.notifications_none_rounded, size: 56, color: Colors.white.withValues(alpha: 0.2)),
+                          const SizedBox(height: 12),
+                          Text('No activity yet', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 16)),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: notifications.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final notif = notifications[index];
+                        return _NotificationTile(
+                          notification: notif,
+                          icon: _iconForType(notif.type),
+                          color: _colorForType(notif.type),
+                          actionText: _actionText(notif.type),
+                          timeAgo: _timeAgo(notif.createdAt),
+                          onTap: () => _onNotificationTap(notif),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

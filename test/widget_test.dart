@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:my_app/main.dart';
 import 'package:my_app/services/auth_service.dart';
@@ -9,6 +10,7 @@ import 'firebase_test_helper.dart';
 void main() {
   setUpAll(() async {
     await setupFirebaseForTesting();
+    SharedPreferences.setMockInitialValues({});
   });
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(430, 1200));
