@@ -1107,3 +1107,12 @@ const _kSeedVersion = '1';
 const _kCountdownBeepsEnabled = 'settings.countdownBeepsEnabled';
 const _kTransitionSoundEnabled = 'settings.transitionSoundEnabled';
 const _kMusicDuckingEnabled = 'settings.musicDuckingEnabled';
+
+Map<String, dynamic> sessionsToFirestoreMap(List<WorkoutSessionEntry> sessions) {
+  final sorted = List<WorkoutSessionEntry>.from(sessions)
+    ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+  return {
+    for (final s in sorted.take(30))
+      '${s.completedAt.millisecondsSinceEpoch}': s.toJson(),
+  };
+}
