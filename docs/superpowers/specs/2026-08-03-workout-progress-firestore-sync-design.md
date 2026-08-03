@@ -30,17 +30,24 @@ it on the Profile page when loading.
 ### 1. Sync after each workout
 
 At the end of `recordWorkoutCompletion()`, after the local prefs update, perform
-a best-effort Firestore write to `users/{uid}` using `set(..., merge: true)`:
+a best-effort Firestore write to `users/{uid}`:
 
 ```text
 totalWorkouts, totalSeconds, currentStreakDays, bestStreakDays,
-lastWorkoutAt, recentSessions, updatedAt
+lastWorkoutAt, recentSessions (map), updatedAt
 ```
 
-The `recentSessions` array is trimmed to the last 30 entries before writing (the
-local list is already bounded via `.take(30)`), so the doc never grows unbounded.
-The write is a single merged document write and is therefore atomic — no batch
-or transaction is needed.
+Sessions are stored as a **map keyed by `completedAt` millis**
+(`recentSessions: { "<millis>": {...session} }`), not an array, so writes from
+two devices merge instead of overwriting each other. One `set(..., merge: true)`
+carries the stat fields plus each session under a dotted path
+(`recentSessions.<millis>`); Firestore merges at the nested-key level, so
+offline sessions logged on two devices both survive. A single merged document
+write is atomic — no batch or transaction is needed.
+
+The local session list is trimmed to the last 30 entries before pushing (already
+bounded via `.take(30)`), capping each device's contribution; the doc may
+accumulate keys across devices, and restore trims to the newest 30.
 
 Gating: only when there is a real Firebase session
 (`FirebaseAuth.instance.currentUser?.uid != null`). Offline device-UID users are
@@ -67,14 +74,15 @@ Call it in three places:
 ### 3. Include session history in profile saves
 
 Extend `saveInsightsToFirestore(uid, insights)` to also write `recentSessions`
-(trimmed to 30) so the profile-edit sync and the post-workout sync keep the same
-shape.
+as a timestamp-keyed map (trimmed to 30) so the profile-edit sync and the
+post-workout sync keep the same shape.
 
 ### 4. Restore history on Profile load
 
 - Add `loadRecentSessionsFromFirestore(String uid)` to read the
-  `recentSessions` array from `users/{uid}` into
-  `List<WorkoutSessionEntry>`.
+  `recentSessions` map from `users/{uid}`, convert each value into a
+  `WorkoutSessionEntry`, sort by key (timestamp) descending, and return the
+  newest 30.
 - In `first_page.dart` `_loadInsights()`, load recent sessions from Firestore
   first and fall back to local prefs when Firestore has none (new device).
 
@@ -86,6 +94,16 @@ Compare `updatedAt`/`lastWorkoutAt` from the Firestore doc against the local
 `lastWorkoutAt`: prefer whichever source is newer. When Firestore has no data,
 fall back to local.
 
+### 6. Version-controlled Firestore security rules
+
+Add a `firestore.rules` file to the repo so rules are auditable and evolve with
+code. Enumerate every collection the app reads/writes (users, community
+workouts, comments, notifications, notification tokens, etc.) before writing
+rules, and restrict each to the minimum access the feature needs. The
+`users/{uid}` doc must be owner read/write (`request.auth.uid == uid`). Rules
+are reviewed with the user before deployment; deploying is a manual step
+(`firebase deploy --only firestore:rules`).
+
 ## Files
 
 | File | Change |
@@ -93,17 +111,15 @@ fall back to local.
 | `lib/services/settings_service.dart` | Add `syncWorkoutProgressToFirestore`; call it from `recordWorkoutCompletion`; extend `saveInsightsToFirestore`; add `loadRecentSessionsFromFirestore` |
 | `lib/main.dart` | Call sync on launch; register `AppLifecycleListener` for resume sync |
 | `lib/pages/first_page.dart` | Load sessions from Firestore first, local fallback; prefer newer insights/session source |
+| `firestore.rules` | New — version-controlled security rules (drafted, reviewed, deployed manually) |
 
 ## Assumptions
 
 - Firestore security rules permit a user to read/write their own `users/{uid}`
-  doc. Rules are not in the repo; the existing profile-edit sync already uses
-  this path.
-- **Manual checklist item:** in Firebase Console → Firestore Database → Rules,
-  confirm the rules restrict `users/{uid}` to owner read/write
-  (`request.auth.uid == uid`). Adding a version-controlled `firestore.rules`
-  file is a separate task (must cover all collections the app uses: users,
-  community, notifications, tokens).
+  doc. The existing profile-edit sync already uses this path.
+- **Manual checklist item:** after the `firestore.rules` file is drafted and
+  reviewed, deploy it with `firebase deploy --only firestore:rules` and verify
+  all app flows (community feed, notifications, publishing) still work.
 
 ## Testing
 
@@ -113,4 +129,7 @@ fall back to local.
   signed in with the same account, Profile shows restored stats and history.
 - Manual offline: complete a workout with no connection → reconnect / resume app
   → verify the missed workout is pushed to Firestore.
-- Trim: complete 35+ workouts → verify the doc's `recentSessions` stays at 30.
+- Trim: complete 35+ workouts → verify restore keeps only the newest 30 sessions.
+- Multi-device: complete workouts offline on two devices → sync both → verify
+  `users/{uid}` holds sessions from both and restore shows a merged, trimmed
+  history.
