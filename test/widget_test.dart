@@ -4,10 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_app/main.dart';
 import 'package:my_app/services/auth_service.dart';
 
+import 'firebase_test_helper.dart';
+
 void main() {
+  setUpAll(() async {
+    await setupFirebaseForTesting();
+  });
   Future<void> pumpApp(WidgetTester tester) async {
-    tester.binding.setSurfaceSize(const Size(430, 1200));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(430, 1200));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
     await tester.pumpWidget(MyApp(authService: AuthService()));
     await tester.pumpAndSettle();
   }
@@ -16,6 +23,14 @@ void main() {
     WidgetTester tester,
     String title,
   ) async {
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Mods'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Quick Start'));
     await tester.pumpAndSettle();
 
@@ -40,7 +55,7 @@ void main() {
     await pumpApp(tester);
 
     expect(find.text('Session Builder'), findsOneWidget);
-    expect(find.text('Music'), findsWidgets);
+    expect(find.text('Play Music'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -58,11 +73,11 @@ void main() {
   testWidgets('Calisthenics quick start opens workout page', (WidgetTester tester) async {
     await pumpApp(tester);
 
-    await openQuickStartMode(tester, 'Calisthenics');
+    await openQuickStartMode(tester, 'HIIT Cardio');
 
     expect(find.text('Session Builder'), findsOneWidget);
     await expectConfigLabelVisible(tester, 'Work: 40s');
-    await expectConfigLabelVisible(tester, 'Warmup: 120s');
+    await expectConfigLabelVisible(tester, 'Warmup: 180s');
     expect(tester.takeException(), isNull);
   });
 }
