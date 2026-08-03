@@ -34,8 +34,13 @@ a best-effort Firestore write to `users/{uid}` using `set(..., merge: true)`:
 
 ```text
 totalWorkouts, totalSeconds, currentStreakDays, bestStreakDays,
-lastWorkoutAt, recentSessions (last 30 entries), updatedAt
+lastWorkoutAt, recentSessions, updatedAt
 ```
+
+The `recentSessions` array is trimmed to the last 30 entries before writing (the
+local list is already bounded via `.take(30)`), so the doc never grows unbounded.
+The write is a single merged document write and is therefore atomic — no batch
+or transaction is needed.
 
 Gating: only when there is a real Firebase session
 (`FirebaseAuth.instance.currentUser?.uid != null`). Offline device-UID users are
@@ -45,13 +50,27 @@ matching the existing best-effort pattern.
 The write is merged so it never clobbers `displayName`, `bio`, or
 `profileImagePath`.
 
-### 2. Include session history in profile saves
+### 2. Background sync on app launch and resume
+
+Add `syncWorkoutProgressToFirestore()` to `SettingsService`: reads local insights
+and recent sessions (trimmed to 30), and writes them to `users/{uid}` with the
+same gating and best-effort error handling as step 1. No-op when there is no
+Firebase session.
+
+Call it in three places:
+1. At the end of `recordWorkoutCompletion()` (step 1).
+2. On app launch in `main.dart`, after auth init.
+3. On app resume (background → foreground) via an `AppLifecycleListener`
+   registered in `main.dart`, so a workout completed while offline gets pushed
+   once connectivity returns.
+
+### 3. Include session history in profile saves
 
 Extend `saveInsightsToFirestore(uid, insights)` to also write `recentSessions`
-(loaded via `loadRecentSessions(limit: 30)`) so the profile-edit sync and the
-post-workout sync keep the same shape.
+(trimmed to 30) so the profile-edit sync and the post-workout sync keep the same
+shape.
 
-### 3. Restore history on Profile load
+### 4. Restore history on Profile load
 
 - Add `loadRecentSessionsFromFirestore(String uid)` to read the
   `recentSessions` array from `users/{uid}` into
@@ -63,7 +82,8 @@ post-workout sync keep the same shape.
 
 | File | Change |
 | --- | --- |
-| `lib/services/settings_service.dart` | Sync in `recordWorkoutCompletion`; extend `saveInsightsToFirestore`; add `loadRecentSessionsFromFirestore` |
+| `lib/services/settings_service.dart` | Add `syncWorkoutProgressToFirestore`; call it from `recordWorkoutCompletion`; extend `saveInsightsToFirestore`; add `loadRecentSessionsFromFirestore` |
+| `lib/main.dart` | Call sync on launch; register `AppLifecycleListener` for resume sync |
 | `lib/pages/first_page.dart` | Load recent sessions from Firestore first, local fallback |
 
 ## Assumptions
@@ -78,3 +98,6 @@ post-workout sync keep the same shape.
 - Manual: complete a workout on device A (signed in) → verify `users/{uid}`
   doc in Firestore has fresh `totalWorkouts`/`recentSessions` → on a new device
   signed in with the same account, Profile shows restored stats and history.
+- Manual offline: complete a workout with no connection → reconnect / resume app
+  → verify the missed workout is pushed to Firestore.
+- Trim: complete 35+ workouts → verify the doc's `recentSessions` stays at 30.
