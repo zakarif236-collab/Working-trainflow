@@ -192,12 +192,16 @@ class HomeTimerLayout extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      Text(
-                        '${_formatTime(totalWorkoutSeconds - elapsedSeconds)} remaining',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                      Flexible(
+                        child: Text(
+                          '${_formatTime(totalWorkoutSeconds - elapsedSeconds)} remaining',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],

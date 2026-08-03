@@ -41,6 +41,7 @@ class _HeaderBannerAdState extends State<HeaderBannerAd> {
           }
         },
         onAdFailedToLoad: (failedAd, error) {
+          debugPrint('Banner ad failed to load: ${error.code} - ${error.message}');
           failedAd.dispose();
         },
       ),

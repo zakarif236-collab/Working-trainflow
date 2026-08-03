@@ -4,6 +4,7 @@ import 'package:my_app/add/ad_helper.dart';
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/settings_service.dart';
+import 'package:my_app/widgets/scaled_banner_ad.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.onStartTraining});
@@ -29,8 +30,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _loadInterstitialAd() {
+    final String adUnitId;
+    try {
+      adUnitId = AdHelper.interstitialAdUnitId;
+    } catch (_) {
+      return;
+    }
     InterstitialAd.load(
-      adUnitId: AdHelper.interstitialAdUnitId,
+      adUnitId: adUnitId,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
@@ -67,8 +74,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _loadBannerAd() {
+    final String adUnitId;
+    try {
+      adUnitId = AdHelper.bannerAdUnitId;
+    } catch (_) {
+      return;
+    }
     final bannerAd = BannerAd(
-      adUnitId: AdHelper.bannerAdUnitId,
+      adUnitId: adUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
@@ -78,6 +91,7 @@ class _HomePageState extends State<HomePage> {
           });
         },
         onAdFailedToLoad: (ad, error) {
+          debugPrint('Home banner ad failed to load: ${error.code} - ${error.message}');
           ad.dispose();
         },
       ),
@@ -205,117 +219,112 @@ class _HomePageState extends State<HomePage> {
         icon: const Icon(Icons.play_circle_outline),
         label: const Text('Watch Ad'),
       ),
-      body: Stack(
-        children: [
-          DecoratedBox(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
-              ),
-            ),
-            child: SafeArea(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 28, 20, 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Mods',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Train smarter, not harder.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1.0,
-                      ),
-                      delegate: SliverChildListDelegate([
-                        _ModCard(
-                          title: 'Quick Start',
-                          subtitle: 'Jump right in',
-                          icon: Icons.play_circle_fill_rounded,
-                          gradient: const [Color(0xFFFF6B8A), Color(0xFFF2A6A6)],
-                          onTap: () => _openTrainingLauncher(context),
-                        ),
-                        _ModCard(
-                          title: 'Workout Builder',
-                          subtitle: 'Create routines',
-                          icon: Icons.bolt_rounded,
-                          gradient: const [Color(0xFF4ADE80), Color(0xFF86E3A4)],
-                          onTap: () => _openWorkoutBuilder(context),
-                        ),
-                        _ModCard(
-                          title: 'My Workouts',
-                          subtitle: 'Your library',
-                          icon: Icons.library_books_rounded,
-                          gradient: const [Color(0xFF60A5FA), Color(0xFF9BC4FF)],
-                          onTap: () => _openMyWorkouts(context),
-                        ),
-                        _ModCard(
-                          title: 'Community',
-                          subtitle: ConnectivityService.instance.isOnline
-                              ? 'Share & discover'
-                              : 'Sign in when online',
-                          icon: Icons.public_rounded,
-                          gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
-                          onTap: ConnectivityService.instance.isOnline
-                              ? () => _openCommunity(context)
-                              : null,
-                        ),
-                        if (canResume)
-                          _ModCard(
-                            title: 'Resume',
-                            subtitle: 'Continue last session',
-                            icon: Icons.playlist_play_rounded,
-                            gradient: const [Color(0xFFFBBF24), Color(0xFFF9C97A)],
-                            onTap: () => _resumeLastWorkout(context),
-                          ),
-                      ]),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF141B2D), Color(0xFF0A1020), Color(0xFF1A2439)],
           ),
-          if (_bannerAd != null)
-            Align(
-              alignment: Alignment.topCenter,
-              child: SafeArea(
+        ),
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 90),
-                  child: SizedBox(
-                    width: _bannerAd!.size.width.toDouble(),
-                    height: _bannerAd!.size.height.toDouble(),
-                    child: AdWidget(ad: _bannerAd!),
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Mods',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Train smarter, not harder.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-        ],
+              if (_bannerAd != null)
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: ScaledBannerAd(
+                        width: 320,
+                        height: 50,
+                        child: AdWidget(ad: _bannerAd!),
+                      ),
+                    ),
+                  ),
+                ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.0,
+                  ),
+                  delegate: SliverChildListDelegate([
+                    _ModCard(
+                      title: 'Quick Start',
+                      subtitle: 'Jump right in',
+                      icon: Icons.play_circle_fill_rounded,
+                      gradient: const [Color(0xFFFF6B8A), Color(0xFFF2A6A6)],
+                      onTap: () => _openTrainingLauncher(context),
+                    ),
+                    _ModCard(
+                      title: 'Workout Builder',
+                      subtitle: 'Create routines',
+                      icon: Icons.bolt_rounded,
+                      gradient: const [Color(0xFF4ADE80), Color(0xFF86E3A4)],
+                      onTap: () => _openWorkoutBuilder(context),
+                    ),
+                    _ModCard(
+                      title: 'My Workouts',
+                      subtitle: 'Your library',
+                      icon: Icons.library_books_rounded,
+                      gradient: const [Color(0xFF60A5FA), Color(0xFF9BC4FF)],
+                      onTap: () => _openMyWorkouts(context),
+                    ),
+                    _ModCard(
+                      title: 'Community',
+                      subtitle: ConnectivityService.instance.isOnline
+                          ? 'Share & discover'
+                          : 'Sign in when online',
+                      icon: Icons.public_rounded,
+                      gradient: const [Color(0xFFF97316), Color(0xFFF5A97D)],
+                      onTap: ConnectivityService.instance.isOnline
+                          ? () => _openCommunity(context)
+                          : null,
+                    ),
+                    if (canResume)
+                      _ModCard(
+                        title: 'Resume',
+                        subtitle: 'Continue last session',
+                        icon: Icons.playlist_play_rounded,
+                        gradient: const [Color(0xFFFBBF24), Color(0xFFF9C97A)],
+                        onTap: () => _resumeLastWorkout(context),
+                      ),
+                  ]),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -22,7 +22,7 @@ class WorkoutTimeline extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 100,
+      height: 150,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: timeline.length,
@@ -328,6 +328,8 @@ class _TimelineItem extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontWeight: FontWeight.w700,
               color: Colors.white,
@@ -337,6 +339,8 @@ class _TimelineItem extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               cue!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ],
