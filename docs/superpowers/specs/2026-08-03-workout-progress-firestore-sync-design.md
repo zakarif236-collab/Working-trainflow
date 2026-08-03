@@ -78,19 +78,32 @@ shape.
 - In `first_page.dart` `_loadInsights()`, load recent sessions from Firestore
   first and fall back to local prefs when Firestore has none (new device).
 
+### 5. Prefer the newer source on load (staleness detection)
+
+Today `_loadInsights()` overrides local insights with Firestore data whenever it
+exists, even if local is newer (e.g. an offline workout that never synced).
+Compare `updatedAt`/`lastWorkoutAt` from the Firestore doc against the local
+`lastWorkoutAt`: prefer whichever source is newer. When Firestore has no data,
+fall back to local.
+
 ## Files
 
 | File | Change |
 | --- | --- |
 | `lib/services/settings_service.dart` | Add `syncWorkoutProgressToFirestore`; call it from `recordWorkoutCompletion`; extend `saveInsightsToFirestore`; add `loadRecentSessionsFromFirestore` |
 | `lib/main.dart` | Call sync on launch; register `AppLifecycleListener` for resume sync |
-| `lib/pages/first_page.dart` | Load recent sessions from Firestore first, local fallback |
+| `lib/pages/first_page.dart` | Load sessions from Firestore first, local fallback; prefer newer insights/session source |
 
 ## Assumptions
 
 - Firestore security rules permit a user to read/write their own `users/{uid}`
   doc. Rules are not in the repo; the existing profile-edit sync already uses
   this path.
+- **Manual checklist item:** in Firebase Console → Firestore Database → Rules,
+  confirm the rules restrict `users/{uid}` to owner read/write
+  (`request.auth.uid == uid`). Adding a version-controlled `firestore.rules`
+  file is a separate task (must cover all collections the app uses: users,
+  community, notifications, tokens).
 
 ## Testing
 
