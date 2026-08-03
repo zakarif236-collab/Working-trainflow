@@ -1041,10 +1041,7 @@ class SettingsService {
     await syncWorkoutProgressToFirestore();
   }
 
-  int _epochDay(DateTime date) {
-    final normalized = DateTime(date.year, date.month, date.day);
-    return normalized.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
-  }
+  int _epochDay(DateTime date) => _epochDayOf(date);
 
   String _dateKey(DateTime date) {
     final month = date.month.toString().padLeft(2, '0');
@@ -1170,6 +1167,39 @@ const _kSeedVersion = '1';
 const _kCountdownBeepsEnabled = 'settings.countdownBeepsEnabled';
 const _kTransitionSoundEnabled = 'settings.transitionSoundEnabled';
 const _kMusicDuckingEnabled = 'settings.musicDuckingEnabled';
+
+int _epochDayOf(DateTime date) {
+  final normalized = DateTime(date.year, date.month, date.day);
+  return normalized.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+}
+
+(int current, int best) computeStreaks(List<WorkoutSessionEntry> sessions) {
+  final days = <int>{
+    for (final s in sessions) _epochDayOf(s.completedAt),
+  }.toList()
+    ..sort((a, b) => b.compareTo(a));
+  if (days.isEmpty) return (0, 0);
+
+  var run = 1;
+  var best = 1;
+  var current = 1;
+  var firstSegment = true;
+  for (var i = 1; i < days.length; i++) {
+    if (days[i - 1] - days[i] == 1) {
+      run++;
+    } else {
+      if (run > best) best = run;
+      if (firstSegment) {
+        current = run; // streak ending at the most recent session day
+        firstSegment = false;
+      }
+      run = 1;
+    }
+  }
+  if (run > best) best = run;
+  if (firstSegment) current = run; // no gaps: the whole list is the current streak
+  return (current, best);
+}
 
 List<WorkoutSessionEntry> mergeSessionsByTimestamp(
   List<WorkoutSessionEntry> local,

@@ -132,4 +132,30 @@ void main() {
     expect(merged.length, 100);
     expect(merged.first.completedAt.millisecondsSinceEpoch, 1_000_059);
   });
+
+  test('computeStreaks counts consecutive days ending at the most recent', () {
+    // Days 10, 9, 8, then a gap, then 5, 4.
+    final sessions = [
+      entry(DateTime(2026, 8, 4).millisecondsSinceEpoch),
+      entry(DateTime(2026, 8, 3).millisecondsSinceEpoch),
+      entry(DateTime(2026, 8, 2).millisecondsSinceEpoch),
+      entry(DateTime(2026, 7, 30).millisecondsSinceEpoch),
+      entry(DateTime(2026, 7, 29).millisecondsSinceEpoch),
+    ];
+
+    final (current, best) = computeStreaks(sessions);
+
+    expect(current, 3); // Aug 4, 3, 2
+    expect(best, 3);
+  });
+
+  test('computeStreaks handles single session and empty list', () {
+    final (singleCurrent, singleBest) = computeStreaks([entry(1000)]);
+    expect(singleCurrent, 1);
+    expect(singleBest, 1);
+
+    final (emptyCurrent, emptyBest) = computeStreaks(const []);
+    expect(emptyCurrent, 0);
+    expect(emptyBest, 0);
+  });
 }
