@@ -1239,6 +1239,58 @@ Map<String, dynamic> buildWorkoutSyncData(
   return data;
 }
 
+DateTime? _later(DateTime? a, DateTime? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a.isAfter(b) ? a : b;
+}
+
+WorkoutInsights resolveInsights(
+  WorkoutInsights local,
+  WorkoutInsights? remote,
+  List<WorkoutSessionEntry> mergedSessions,
+) {
+  final profile = pickNewerInsights(local, remote);
+  final truncated = mergedSessions.length >= _kSessionStorageCap;
+
+  if (!truncated) {
+    final (currentStreak, bestStreak) = computeStreaks(mergedSessions);
+    return WorkoutInsights(
+      displayName: profile.displayName,
+      profileImagePath: profile.profileImagePath,
+      bio: profile.bio,
+      totalWorkouts: mergedSessions.length,
+      totalSeconds: mergedSessions.fold<int>(
+          0, (total, s) => total + s.durationSeconds),
+      currentStreakDays: currentStreak,
+      bestStreakDays: bestStreak,
+      lastWorkoutAt: mergedSessions.isEmpty
+          ? null
+          : mergedSessions.first.completedAt,
+    );
+  }
+
+  final remoteCount = remote?.totalWorkouts ?? 0;
+  return WorkoutInsights(
+    displayName: profile.displayName,
+    profileImagePath: profile.profileImagePath,
+    bio: profile.bio,
+    totalWorkouts: local.totalWorkouts > remoteCount
+        ? local.totalWorkouts
+        : remoteCount,
+    totalSeconds: local.totalSeconds > (remote?.totalSeconds ?? 0)
+        ? local.totalSeconds
+        : (remote?.totalSeconds ?? 0),
+    currentStreakDays: local.currentStreakDays > (remote?.currentStreakDays ?? 0)
+        ? local.currentStreakDays
+        : (remote?.currentStreakDays ?? 0),
+    bestStreakDays: local.bestStreakDays > (remote?.bestStreakDays ?? 0)
+        ? local.bestStreakDays
+        : (remote?.bestStreakDays ?? 0),
+    lastWorkoutAt: _later(local.lastWorkoutAt, remote?.lastWorkoutAt),
+  );
+}
+
 WorkoutInsights pickNewerInsights(WorkoutInsights local, WorkoutInsights? remote) {
   if (remote == null) return local;
   final localAt = local.lastWorkoutAt;

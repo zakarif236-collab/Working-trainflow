@@ -158,4 +158,50 @@ void main() {
     expect(emptyCurrent, 0);
     expect(emptyBest, 0);
   });
+
+  test('resolveInsights recomputes counters from a complete union', () {
+    final local = insightsAt(null, total: 2);
+    final remote = insightsAt(DateTime(2026, 8, 4), total: 2);
+    final union = [entry(4000), entry(3000), entry(2000), entry(1000)];
+
+    final resolved = resolveInsights(local, remote, union);
+
+    expect(resolved.totalWorkouts, 4);
+    expect(resolved.totalSeconds, 120);
+    expect(resolved.lastWorkoutAt, DateTime.fromMillisecondsSinceEpoch(4000));
+    expect(resolved.displayName, 'Test'); // profile fields come from pickNewerInsights
+  });
+
+  test('resolveInsights falls back to monotonic max when truncated', () {
+    final local = WorkoutInsights(
+      displayName: 'Test',
+      profileImagePath: '',
+      bio: '',
+      totalWorkouts: 150,
+      totalSeconds: 9000,
+      currentStreakDays: 30,
+      bestStreakDays: 40,
+      lastWorkoutAt: DateTime(2026, 8, 1),
+    );
+    final remote = WorkoutInsights(
+      displayName: 'Test',
+      profileImagePath: '',
+      bio: '',
+      totalWorkouts: 80,
+      totalSeconds: 5000,
+      currentStreakDays: 12,
+      bestStreakDays: 20,
+      lastWorkoutAt: DateTime(2026, 8, 2),
+    );
+    // Union is capped (length >= cap), so the list is incomplete.
+    final union = List.generate(100, (i) => entry(1000 + i));
+
+    final resolved = resolveInsights(local, remote, union);
+
+    expect(resolved.totalWorkouts, 150); // max, never drops
+    expect(resolved.totalSeconds, 9000);
+    expect(resolved.currentStreakDays, 30);
+    expect(resolved.bestStreakDays, 40);
+    expect(resolved.lastWorkoutAt, DateTime(2026, 8, 2)); // later of the two
+  });
 }
