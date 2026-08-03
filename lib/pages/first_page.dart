@@ -49,19 +49,22 @@ class _FirstPageState extends State<FirstPage> {
       final authService = AuthService();
       final uid = authService.currentUserId;
 
-      WorkoutInsights? insights;
-      insights = await _settingsService.loadInsightsFromFirestore(uid);
+      final localInsights = await _settingsService.loadInsights();
+      final remoteInsights = await _settingsService.loadInsightsFromFirestore(uid);
+      final insights = pickNewerInsights(localInsights, remoteInsights);
 
-      insights ??= await _settingsService.loadInsights();
+      var sessions = await _settingsService.loadRecentSessionsFromFirestore(uid);
+      if (sessions.isEmpty) {
+        sessions = await _settingsService.loadRecentSessions(limit: 30);
+      }
 
-      final sessions = await _settingsService.loadRecentSessions(limit: 30);
       final communityStats = await _settingsService.loadMyCommunityStats();
       final appLifetimeDays = await _settingsService.loadAppLifetimeDays();
       if (!mounted) {
         return;
       }
       setState(() {
-        _insights = insights!;
+        _insights = insights;
         _communityStats = communityStats;
         _recentSessions = sessions;
         _appLifetimeDays = appLifetimeDays;
