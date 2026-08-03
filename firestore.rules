@@ -23,7 +23,7 @@ service cloud.firestore {
       allow update: if request.auth != null;
       allow delete: if request.auth != null &&
           (resource.data.creatorId == request.auth.uid ||
-           request.auth.token.email == 'kingslayer.et@gmail.com');
+           request.auth.token.admin == true);
 
       match /comments/{commentId} {
         allow read, create: if request.auth != null;
