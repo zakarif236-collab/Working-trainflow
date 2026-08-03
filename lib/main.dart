@@ -15,6 +15,7 @@ import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/notification_service.dart';
 import 'package:my_app/services/push_notification_service.dart';
+import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/deep_link_service.dart';
 import 'package:my_app/services/workout_foreground_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -72,6 +73,8 @@ Future<void> main() async {
     debugPrint('[main] PushNotification init skipped (offline or timeout)');
   }
 
+  await SettingsService().syncWorkoutProgressToFirestore();
+
   assert(() {
     if (GeminiConfig.isConfigured) {
       debugPrint('Gemini voice-over key is configured.');
@@ -82,6 +85,9 @@ Future<void> main() async {
   }());
 
   runApp(MyApp(authService: authService));
+  AppLifecycleListener(
+    onResume: () => SettingsService().syncWorkoutProgressToFirestore(),
+  );
   WidgetsBinding.instance.addPostFrameCallback((_) {
     DeepLinkService.instance.init(navigatorKey);
   });
