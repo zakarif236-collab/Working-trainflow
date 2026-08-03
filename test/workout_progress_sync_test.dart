@@ -36,13 +36,13 @@ void main() {
     expect(map['2000']!['durationSeconds'], 30);
   });
 
-  test('trims to the newest 30 sessions', () {
-    final sessions = List.generate(35, (i) => entry(1000 + i));
+  test('trims to the newest 100 sessions', () {
+    final sessions = List.generate(105, (i) => entry(1000 + i));
 
     final map = sessionsToFirestoreMap(sessions);
 
-    expect(map.length, 30);
-    expect(map.keys.first, '1034');
+    expect(map.length, 100);
+    expect(map.keys.first, '1104');
     expect(map.keys.last, '1005');
   });
 

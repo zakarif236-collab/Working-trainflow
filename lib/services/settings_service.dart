@@ -14,6 +14,8 @@ const int _kMaxWorkoutSets = 50;
 
 const Duration _kFirestoreNetworkTimeout = Duration(seconds: 8);
 
+const int _kSessionStorageCap = 100;
+
 class AppSettings {
   const AppSettings({
     required this.config,
@@ -849,7 +851,7 @@ class SettingsService {
         'displayName': insights.displayName,
         'bio': insights.bio,
         'profileImagePath': insights.profileImagePath,
-        ...buildWorkoutSyncData(insights, await loadRecentSessions(limit: 30)),
+        ...buildWorkoutSyncData(insights, await loadRecentSessions(limit: _kSessionStorageCap)),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       await FirebaseFirestore.instance.collection('users').doc(uid).set(
@@ -910,7 +912,7 @@ class SettingsService {
           .toList()
         ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
 
-      return sessions.take(30).toList(growable: false);
+      return sessions.take(_kSessionStorageCap).toList(growable: false);
     } catch (_) {
       return const [];
     }
@@ -948,7 +950,7 @@ class SettingsService {
       if (!ConnectivityService.instance.isOnline) return;
 
       final insights = await loadInsights();
-      final sessions = await loadRecentSessions(limit: 30);
+      final sessions = await loadRecentSessions(limit: _kSessionStorageCap);
 
       final data = buildWorkoutSyncData(insights, sessions);
       data['updatedAt'] = FieldValue.serverTimestamp();
@@ -1014,7 +1016,7 @@ class SettingsService {
     await prefs.setInt(_kLastWorkoutEpochDay, todayDay);
     await prefs.setInt(_kLastWorkoutMillis, now.millisecondsSinceEpoch);
 
-    final recent = await loadRecentSessions(limit: 30);
+    final recent = await loadRecentSessions(limit: _kSessionStorageCap);
     final activeConfig = config ?? WorkoutConfig.defaults;
     final isVo2Max = _isVo2MaxFourByFour(activeConfig);
     final estimatedGainPct = isVo2Max ? 1.2 : null;
@@ -1032,7 +1034,7 @@ class SettingsService {
         badgeTitle: isVo2Max ? 'Completed 4x4 VO2max session' : null,
       ),
       ...recent,
-    ].take(30).map((entry) => entry.toJson()).toList(growable: false);
+    ].take(_kSessionStorageCap).map((entry) => entry.toJson()).toList(growable: false);
 
     await prefs.setString(_kRecentSessions, jsonEncode(updated));
 
@@ -1173,7 +1175,7 @@ Map<String, dynamic> sessionsToFirestoreMap(List<WorkoutSessionEntry> sessions) 
   final sorted = List<WorkoutSessionEntry>.from(sessions)
     ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
   return {
-    for (final s in sorted.take(30))
+    for (final s in sorted.take(_kSessionStorageCap))
       '${s.completedAt.millisecondsSinceEpoch}': s.toJson(),
   };
 }
