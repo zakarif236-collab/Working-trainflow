@@ -842,17 +842,17 @@ class SettingsService {
 
   Future<void> saveInsightsToFirestore(String uid, WorkoutInsights insights) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      final data = <String, dynamic>{
         'displayName': insights.displayName,
         'bio': insights.bio,
         'profileImagePath': insights.profileImagePath,
-        'totalWorkouts': insights.totalWorkouts,
-        'totalSeconds': insights.totalSeconds,
-        'currentStreakDays': insights.currentStreakDays,
-        'bestStreakDays': insights.bestStreakDays,
-        'lastWorkoutAt': insights.lastWorkoutAt?.millisecondsSinceEpoch,
+        ...buildWorkoutSyncData(insights, await loadRecentSessions(limit: 30)),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+      await FirebaseFirestore.instance.collection('users').doc(uid).set(
+            data,
+            SetOptions(merge: true),
+          );
     } catch (_) {
       // Firestore write is best-effort; local SharedPreferences remains the source of truth on failure.
     }
