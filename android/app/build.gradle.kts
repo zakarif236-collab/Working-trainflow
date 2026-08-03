@@ -9,6 +9,8 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
 
+val isBundling = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -57,7 +59,7 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            isEnable = !isBundling
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true

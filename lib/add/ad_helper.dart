@@ -6,7 +6,7 @@ class AdHelper {
       return 'ca-app-pub-3940256099942544/6300978111'; // Google test banner ad unit
       // Production: 'ca-app-pub-6138624088986178/4990989256'
     } else if (Platform.isIOS) {
-      return '<your_ios_banner_ad_id>'; // Replace with your actual iOS Ad Unit ID
+      return 'ca-app-pub-6138624088986178/1269723322';
     } else {
       throw UnsupportedError('Unsupported platform');
     }
@@ -27,7 +27,7 @@ class AdHelper {
       return 'ca-app-pub-3940256099942544/5224354917'; // Google test rewarded ad unit
       // Production: 'ca-app-pub-6138624088986178/2840036851'
     } else if (Platform.isIOS) {
-      return '<your_ios_rewarded_ad_id>'; // Replace with your actual iOS Ad Unit ID
+      return 'ca-app-pub-6138624088986178/7209425656';
     } else {
       throw UnsupportedError('Unsupported platform');
     }
