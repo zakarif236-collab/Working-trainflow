@@ -7,6 +7,7 @@ import 'package:my_app/services/push_notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 const int _kMaxWorkoutSets = 50;
 
@@ -907,6 +908,26 @@ class SettingsService {
     }
   }
 
+  Future<void> syncWorkoutProgressToFirestore() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      final insights = await loadInsights();
+      final sessions = await loadRecentSessions(limit: 30);
+
+      final data = buildWorkoutSyncData(insights, sessions);
+      data['updatedAt'] = FieldValue.serverTimestamp();
+
+      await FirebaseFirestore.instance.collection('users').doc(uid).set(
+            data,
+            SetOptions(merge: true),
+          );
+    } catch (e) {
+      debugPrint('SettingsService: workout progress sync failed: $e');
+    }
+  }
+
   Future<bool> shouldSendMissedWorkoutReminder({DateTime? now}) async {
     final prefs = await SharedPreferences.getInstance();
     final current = now ?? DateTime.now();
@@ -976,6 +997,8 @@ class SettingsService {
     ].take(30).map((entry) => entry.toJson()).toList(growable: false);
 
     await prefs.setString(_kRecentSessions, jsonEncode(updated));
+
+    await syncWorkoutProgressToFirestore();
   }
 
   int _epochDay(DateTime date) {
@@ -1115,4 +1138,21 @@ Map<String, dynamic> sessionsToFirestoreMap(List<WorkoutSessionEntry> sessions) 
     for (final s in sorted.take(30))
       '${s.completedAt.millisecondsSinceEpoch}': s.toJson(),
   };
+}
+
+Map<String, dynamic> buildWorkoutSyncData(
+  WorkoutInsights insights,
+  List<WorkoutSessionEntry> sessions,
+) {
+  final data = <String, dynamic>{
+    'totalWorkouts': insights.totalWorkouts,
+    'totalSeconds': insights.totalSeconds,
+    'currentStreakDays': insights.currentStreakDays,
+    'bestStreakDays': insights.bestStreakDays,
+    'lastWorkoutAt': insights.lastWorkoutAt?.millisecondsSinceEpoch,
+  };
+  for (final entry in sessionsToFirestoreMap(sessions).entries) {
+    data['recentSessions.${entry.key}'] = entry.value;
+  }
+  return data;
 }
