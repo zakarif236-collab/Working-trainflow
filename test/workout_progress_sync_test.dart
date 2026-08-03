@@ -172,6 +172,26 @@ void main() {
     expect(resolved.displayName, 'Test'); // profile fields come from pickNewerInsights
   });
 
+  test('resolveInsights never drops counters below the stored monotonic max', () {
+    // Legacy cap-30 history: counter says 60 but only 30 sessions survive.
+    final local = WorkoutInsights(
+      displayName: 'Test',
+      profileImagePath: '',
+      bio: '',
+      totalWorkouts: 60,
+      totalSeconds: 6000,
+      currentStreakDays: 30,
+      bestStreakDays: 40,
+      lastWorkoutAt: DateTime(2026, 8, 1),
+    );
+    final union = List.generate(30, (i) => entry(1000 + i));
+
+    final resolved = resolveInsights(local, null, union);
+
+    expect(resolved.totalWorkouts, 60); // must not regress to 30
+    expect(resolved.totalSeconds, 6000); // must not regress to recomputed 900
+  });
+
   test('resolveInsights falls back to monotonic max when truncated', () {
     final local = WorkoutInsights(
       displayName: 'Test',

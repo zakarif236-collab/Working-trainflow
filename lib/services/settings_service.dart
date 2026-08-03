@@ -1289,13 +1289,23 @@ WorkoutInsights resolveInsights(
 
   if (!truncated) {
     final (currentStreak, bestStreak) = computeStreaks(mergedSessions);
+    final maxWorkouts = local.totalWorkouts > (remote?.totalWorkouts ?? 0)
+        ? local.totalWorkouts
+        : (remote?.totalWorkouts ?? 0);
+    final maxSeconds = local.totalSeconds > (remote?.totalSeconds ?? 0)
+        ? local.totalSeconds
+        : (remote?.totalSeconds ?? 0);
+    final recomputedWorkouts = mergedSessions.length;
+    final recomputedSeconds = mergedSessions.fold<int>(
+        0, (total, s) => total + s.durationSeconds);
     return WorkoutInsights(
       displayName: profile.displayName,
       profileImagePath: profile.profileImagePath,
       bio: profile.bio,
-      totalWorkouts: mergedSessions.length,
-      totalSeconds: mergedSessions.fold<int>(
-          0, (total, s) => total + s.durationSeconds),
+      totalWorkouts: recomputedWorkouts > maxWorkouts
+          ? recomputedWorkouts
+          : maxWorkouts,
+      totalSeconds: recomputedSeconds > maxSeconds ? recomputedSeconds : maxSeconds,
       currentStreakDays: currentStreak,
       bestStreakDays: bestStreak,
       lastWorkoutAt: mergedSessions.isEmpty
