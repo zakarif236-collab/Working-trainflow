@@ -204,4 +204,39 @@ void main() {
     expect(resolved.bestStreakDays, 40);
     expect(resolved.lastWorkoutAt, DateTime(2026, 8, 2)); // later of the two
   });
+
+  test('two devices offline, then converge to an identical union', () {
+    // Device A's local history.
+    final deviceA = [entry(1000), entry(2000)];
+    // Device B's disjoint offline history.
+    final deviceB = [entry(3000), entry(4000)];
+
+    // A merges: its local sessions + the remote (B's) sessions.
+    final aMerged = mergeSessionsByTimestamp(deviceA, deviceB);
+    final aResolved = resolveInsights(
+      insightsAt(null, total: 2),
+      insightsAt(DateTime.fromMillisecondsSinceEpoch(4000), total: 2),
+      aMerged,
+    );
+
+    // B merges: its local sessions + the remote (A's) sessions.
+    final bMerged = mergeSessionsByTimestamp(deviceB, deviceA);
+    final bResolved = resolveInsights(
+      insightsAt(null, total: 2),
+      insightsAt(DateTime.fromMillisecondsSinceEpoch(4000), total: 2),
+      bMerged,
+    );
+
+    expect(aMerged.length, 4);
+    expect(bMerged.length, 4);
+    expect(aResolved.totalWorkouts, 4);
+    expect(aResolved.totalSeconds, 120);
+    // Both devices end up with the identical union.
+    expect(
+      bMerged.map((s) => s.completedAt.millisecondsSinceEpoch).toList(),
+      aMerged.map((s) => s.completedAt.millisecondsSinceEpoch).toList(),
+    );
+    expect(bResolved.totalWorkouts, aResolved.totalWorkouts);
+    expect(bResolved.totalSeconds, aResolved.totalSeconds);
+  });
 }

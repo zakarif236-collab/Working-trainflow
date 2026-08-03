@@ -16,6 +16,13 @@ const Duration _kFirestoreNetworkTimeout = Duration(seconds: 8);
 
 const int _kSessionStorageCap = 100;
 
+class InsightsMergeResult {
+  const InsightsMergeResult({required this.insights, required this.sessions});
+
+  final WorkoutInsights insights;
+  final List<WorkoutSessionEntry> sessions;
+}
+
 class AppSettings {
   const AppSettings({
     required this.config,
@@ -966,6 +973,33 @@ class SettingsService {
     } catch (e) {
       debugPrint('SettingsService: workout progress sync failed: $e');
     }
+  }
+
+  Future<InsightsMergeResult> mergeRemoteInsights(String uid) async {
+    final localInsights = await loadInsights();
+    final localSessions = await loadRecentSessions(limit: _kSessionStorageCap);
+
+    final remoteInsights = await loadInsightsFromFirestore(uid);
+    final remoteSessions = await loadRecentSessionsFromFirestore(uid);
+
+    final mergedSessions = mergeSessionsByTimestamp(localSessions, remoteSessions);
+    final merged = resolveInsights(localInsights, remoteInsights, mergedSessions);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kRecentSessions,
+      jsonEncode(mergedSessions.map((e) => e.toJson()).toList(growable: false)),
+    );
+    await prefs.setInt(_kTotalWorkouts, merged.totalWorkouts);
+    await prefs.setInt(_kTotalSeconds, merged.totalSeconds);
+    await prefs.setInt(_kCurrentStreakDays, merged.currentStreakDays);
+    await prefs.setInt(_kBestStreakDays, merged.bestStreakDays);
+    if (merged.lastWorkoutAt != null) {
+      await prefs.setInt(_kLastWorkoutMillis, merged.lastWorkoutAt!.millisecondsSinceEpoch);
+      await prefs.setInt(_kLastWorkoutEpochDay, _epochDay(merged.lastWorkoutAt!));
+    }
+
+    return InsightsMergeResult(insights: merged, sessions: mergedSessions);
   }
 
   Future<bool> shouldSendMissedWorkoutReminder({DateTime? now}) async {
