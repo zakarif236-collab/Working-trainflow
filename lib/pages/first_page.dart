@@ -7,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:my_app/services/reminder_service.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/auth_service.dart';
+import 'package:my_app/services/connectivity_service.dart';
+
+const Duration _kInsightsNetworkTimeout = Duration(seconds: 8);
 
 class FirstPage extends StatefulWidget {
   const FirstPage({super.key, this.onBackPressed});
@@ -50,26 +53,47 @@ class _FirstPageState extends State<FirstPage> {
       final uid = authService.currentUserId;
 
       final localInsights = await _settingsService.loadInsights();
-      final remoteInsights = await _settingsService.loadInsightsFromFirestore(uid);
-      final insights = pickNewerInsights(localInsights, remoteInsights);
-
-      var sessions = await _settingsService.loadRecentSessionsFromFirestore(uid);
-      if (sessions.isEmpty) {
-        sessions = await _settingsService.loadRecentSessions(limit: 30);
-      }
-
+      var sessions = await _settingsService.loadRecentSessions(limit: 30);
       final communityStats = await _settingsService.loadMyCommunityStats();
       final appLifetimeDays = await _settingsService.loadAppLifetimeDays();
       if (!mounted) {
         return;
       }
       setState(() {
-        _insights = insights;
+        _insights = localInsights;
         _communityStats = communityStats;
         _recentSessions = sessions;
         _appLifetimeDays = appLifetimeDays;
         _loadingInsights = false;
       });
+
+      // Merge remote data only when connectivity is available so an offline
+      // startup never blocks on a Firestore read that cannot complete.
+      if (ConnectivityService.instance.isOnline) {
+        try {
+          final remoteInsights = await _settingsService
+              .loadInsightsFromFirestore(uid)
+              .timeout(_kInsightsNetworkTimeout);
+          final merged = pickNewerInsights(localInsights, remoteInsights);
+
+          final remoteSessions = await _settingsService
+              .loadRecentSessionsFromFirestore(uid)
+              .timeout(_kInsightsNetworkTimeout);
+          if (remoteSessions.isNotEmpty) {
+            sessions = remoteSessions;
+          }
+
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _insights = merged;
+            _recentSessions = sessions;
+          });
+        } catch (_) {
+          // Offline or slow network: keep the local data already shown.
+        }
+      }
 
       try {
         await ReminderService.instance.maybeSendDailyWorkoutReminder(

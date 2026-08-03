@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/models/workout_schedule.dart';
 import 'package:my_app/services/community_firestore_service.dart';
+import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/push_notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 const int _kMaxWorkoutSets = 50;
+
+const Duration _kFirestoreNetworkTimeout = Duration(seconds: 8);
 
 class AppSettings {
   const AppSettings({
@@ -860,7 +863,11 @@ class SettingsService {
 
   Future<WorkoutInsights?> loadInsightsFromFirestore(String uid) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(_kFirestoreNetworkTimeout);
       if (!doc.exists) return null;
       final data = doc.data();
       if (data == null) return null;
@@ -885,7 +892,11 @@ class SettingsService {
 
   Future<List<WorkoutSessionEntry>> loadRecentSessionsFromFirestore(String uid) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(_kFirestoreNetworkTimeout);
       final raw = doc.data()?['recentSessions'];
       if (raw is! Map) return const [];
 
@@ -934,6 +945,7 @@ class SettingsService {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
+      if (!ConnectivityService.instance.isOnline) return;
 
       final insights = await loadInsights();
       final sessions = await loadRecentSessions(limit: 30);
@@ -941,10 +953,14 @@ class SettingsService {
       final data = buildWorkoutSyncData(insights, sessions);
       data['updatedAt'] = FieldValue.serverTimestamp();
 
-      await FirebaseFirestore.instance.collection('users').doc(uid).set(
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .set(
             data,
             SetOptions(merge: true),
-          );
+          )
+          .timeout(_kFirestoreNetworkTimeout);
     } catch (e) {
       debugPrint('SettingsService: workout progress sync failed: $e');
     }

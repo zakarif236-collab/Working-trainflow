@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:my_app/config/gemini_config.dart';
 import 'package:my_app/pages/community_page.dart';
@@ -30,6 +32,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // ✅ Enable Firestore offline persistence so cached reads resolve without a network.
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      FirebaseFirestore.instance.settings =
+          const Settings(persistenceEnabled: true);
+    } catch (_) {}
+  }
   // ✅ Initialize AdMob only on Android/iOS
   if (Platform.isAndroid || Platform.isIOS) {
     await MobileAds.instance.initialize();
@@ -51,7 +60,9 @@ Future<void> main() async {
   if (!authService.hasFirebaseSession) {
     if (ConnectivityService.instance.isOnline) {
       try {
-        await authService.signInAnonymously();
+        await authService
+            .signInAnonymously()
+            .timeout(const Duration(seconds: 8));
       } catch (_) {
         debugPrint('[main] Firebase Auth unavailable, using local UID fallback');
       }
@@ -73,7 +84,8 @@ Future<void> main() async {
     debugPrint('[main] PushNotification init skipped (offline or timeout)');
   }
 
-  await SettingsService().syncWorkoutProgressToFirestore();
+  // Best-effort background sync; never block app startup on the network.
+  unawaited(SettingsService().syncWorkoutProgressToFirestore());
 
   assert(() {
     if (GeminiConfig.isConfigured) {
