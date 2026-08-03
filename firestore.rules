@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Profile/stats/token doc: readable by any signed-in user (community
+    // stats read other creators' profiles), writable only by the owner.
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+
+      // Private per-user collections (likes, favorites, saved, ratings,
+      // follows) are owner-only.
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Community workouts: any signed-in user may browse or publish, and may
+    // update (like/favorite/save/rate/share all update the workout doc).
+    // Delete is restricted to the author or the admin account.
+    match /community_workouts/{workoutId} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null &&
+          (resource.data.creatorId == request.auth.uid ||
+           request.auth.token.email == 'kingslayer.et@gmail.com');
+
+      match /comments/{commentId} {
+        allow read, create: if request.auth != null;
+      }
+    }
+
+    // Share notifications are enqueued by the app; nothing reads them in-app.
+    match /notifications/{notificationId} {
+      allow create: if request.auth != null;
+    }
+  }
+}
