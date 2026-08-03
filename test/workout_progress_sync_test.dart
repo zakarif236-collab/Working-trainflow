@@ -85,4 +85,28 @@ void main() {
     expect(data.containsKey('updatedAt'), isFalse);
     expect(data.containsKey('displayName'), isFalse);
   });
+
+  test('pickNewerInsights prefers the source with the newer last workout',
+      () {
+    final local = insightsAt(DateTime(2026, 8, 3), total: 5);
+    final olderRemote = insightsAt(DateTime(2026, 8, 2), total: 4);
+    expect(pickNewerInsights(local, olderRemote), same(local));
+
+    final newerRemote = insightsAt(DateTime(2026, 8, 4), total: 6);
+    expect(pickNewerInsights(local, newerRemote), same(newerRemote));
+  });
+
+  test('pickNewerInsights falls back to local when remote is null or empty',
+      () {
+    final local = insightsAt(DateTime(2026, 8, 3), total: 5);
+    expect(pickNewerInsights(local, null), same(local));
+    expect(pickNewerInsights(local, insightsAt(null, total: 0)), same(local));
+  });
+
+  test('pickNewerInsights uses remote on a fresh device with no local workouts',
+      () {
+    final emptyLocal = insightsAt(null, total: 0);
+    final remote = insightsAt(DateTime(2026, 8, 3), total: 4);
+    expect(pickNewerInsights(emptyLocal, remote), same(remote));
+  });
 }

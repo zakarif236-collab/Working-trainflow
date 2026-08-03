@@ -883,6 +883,28 @@ class SettingsService {
     }
   }
 
+  Future<List<WorkoutSessionEntry>> loadRecentSessionsFromFirestore(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final raw = doc.data()?['recentSessions'];
+      if (raw is! Map) return const [];
+
+      final sessions = raw.entries
+          .map((entry) {
+            final value = entry.value;
+            if (value is! Map) return null;
+            return WorkoutSessionEntry.fromJson(Map<String, dynamic>.from(value));
+          })
+          .nonNulls
+          .toList()
+        ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+
+      return sessions.take(30).toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<List<WorkoutSessionEntry>> loadRecentSessions({int limit = 7}) async {
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString(_kRecentSessions);
@@ -1155,4 +1177,14 @@ Map<String, dynamic> buildWorkoutSyncData(
     data['recentSessions.${entry.key}'] = entry.value;
   }
   return data;
+}
+
+WorkoutInsights pickNewerInsights(WorkoutInsights local, WorkoutInsights? remote) {
+  if (remote == null) return local;
+  final localAt = local.lastWorkoutAt;
+  final remoteAt = remote.lastWorkoutAt;
+  if (localAt == null && remoteAt == null) return local;
+  if (localAt == null) return remote;
+  if (remoteAt == null) return local;
+  return remoteAt.isAfter(localAt) ? remote : local;
 }
