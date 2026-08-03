@@ -131,9 +131,12 @@ class WorkoutForegroundService {
     final seconds = _remainingSeconds % 60;
     final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
     final setStr = 'Set $_currentSet/$_totalSets';
+    final stateStr = '$_exerciseName • $setStr • $timeStr'
+        '${_isMusicPlaying ? ' • Music' : ''}'
+        '${_isPaused ? ' • Paused' : ''}';
     _service.invoke('setNotificationInfo', {
       'title': _workoutName,
-      'content': '$_exerciseName • $setStr • $timeStr',
+      'content': stateStr,
     });
   }
 

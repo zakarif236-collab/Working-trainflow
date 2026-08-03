@@ -29,7 +29,7 @@ class _MainShellPageState extends State<MainShellPage> {
   @override
   void initState() {
     super.initState();
-    _scheduleDailyNotification();
+    _rescheduleWorkoutReminders();
     _notifService.addListener(_onNotificationsChanged);
     _notifService.load();
     OnboardingSheet.showIfNeeded(context, _authService);
@@ -47,17 +47,10 @@ class _MainShellPageState extends State<MainShellPage> {
     }
   }
 
-  Future<void> _scheduleDailyNotification() async {
-    try {
-      await ReminderService.instance.scheduleDailyMotivation(SettingsService());
-    } catch (_) {}
-
-    // Re-schedule weekly workout notifications from saved preferences
+  Future<void> _rescheduleWorkoutReminders() async {
     try {
       final schedule = await SettingsService().loadWorkoutSchedule();
-      if (schedule.enabled && schedule.days.isNotEmpty) {
-        await ReminderService.instance.scheduleWeeklyNotifications(schedule);
-      }
+      await ReminderService.instance.scheduleWeeklyNotifications(schedule);
     } catch (_) {}
   }
 

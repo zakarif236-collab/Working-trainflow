@@ -61,7 +61,11 @@ Future<void> main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  await NotificationService.instance.load();
+  try {
+    await NotificationService.instance.load();
+  } catch (_) {
+    debugPrint('[main] NotificationService.load failed');
+  }
   try {
     await PushNotificationService.instance.initialize().timeout(const Duration(seconds: 5));
   } catch (_) {

@@ -18,15 +18,20 @@ class NotificationService extends ChangeNotifier {
   int get unreadCount => _notifications.where((n) => !n.isRead).length;
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    if (raw == null || raw.isEmpty) {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw == null || raw.isEmpty) {
+        _notifications = [];
+      } else {
+        final list = jsonDecode(raw) as List;
+        _notifications = list
+            .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false);
+      }
+    } catch (e) {
       _notifications = [];
-    } else {
-      final list = jsonDecode(raw) as List;
-      _notifications = list
-          .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
-          .toList(growable: false);
+      debugPrint('NotificationService: failed to load notifications: $e');
     }
     notifyListeners();
   }

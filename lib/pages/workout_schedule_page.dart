@@ -72,14 +72,22 @@ class _WorkoutSchedulePageState extends State<WorkoutSchedulePage> {
   Future<void> _updateSchedule(WorkoutSchedule updated) async {
     setState(() => _schedule = updated);
     await _settings.saveWorkoutSchedule(updated);
-    await ReminderService.instance.scheduleWeeklyNotifications(updated);
+    try {
+      await ReminderService.instance.scheduleWeeklyNotifications(updated);
+    } catch (e) {
+      debugPrint('Failed to schedule weekly notifications: $e');
+    }
   }
 
   Future<void> _toggleEnabled(bool value) async {
     final updated = _schedule.copyWith(enabled: value);
     await _updateSchedule(updated);
     if (value && mounted) {
-      await ReminderService.instance.sendScheduleConfirmation(updated);
+      try {
+        await ReminderService.instance.sendScheduleConfirmation(updated);
+      } catch (e) {
+        debugPrint('Failed to send schedule confirmation: $e');
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:my_app/models/workout_schedule.dart';
 import 'package:my_app/services/settings_service.dart';
@@ -14,9 +16,7 @@ class ReminderService {
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
-  static const _dailyNotificationId = 7700;
   static const _weeklyNotificationIdBase = 8800;
-
   static const _messagesNoStreak = [
     "New day, new PR waiting to happen. Lace up and let's go!",
     "Your future self will thank you for showing up today.",
@@ -52,58 +52,32 @@ class ReminderService {
     }
 
     tz.initializeTimeZones();
+    await _setLocalLocation();
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
+    try {
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
 
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
 
-    await _notifications.initialize(initSettings);
-    await _requestPermissions();
-    _initialized = true;
-  }
-
-  Future<void> scheduleDailyMotivation(SettingsService settingsService) async {
-    await initialize();
-
-    final insights = await settingsService.loadInsights();
-    final streak = insights.currentStreakDays;
-    final message = _pickMessage(streak);
-
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, 8, 0);
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+      await _notifications.initialize(initSettings);
+    } catch (e) {
+      debugPrint('ReminderService: notification plugin init failed: $e');
     }
 
-    const details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'workout_reminders',
-        'Workout Reminders',
-        channelDescription: 'Daily motivation to keep your training streak alive',
-        importance: Importance.high,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: DarwinNotificationDetails(),
-    );
-
-    await _notifications.zonedSchedule(
-      _dailyNotificationId,
-      'Time to train',
-      message,
-      scheduled,
-      details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
+    try {
+      await _requestPermissions();
+    } catch (e) {
+      debugPrint('ReminderService: notification permission request failed: $e');
+    }
+    _initialized = true;
   }
 
   Future<void> maybeSendDailyWorkoutReminder(SettingsService settingsService) async {
@@ -129,12 +103,16 @@ class ReminderService {
       iOS: DarwinNotificationDetails(),
     );
 
-    await _notifications.show(
-      9001,
-      'Daily workout reminder',
-      message,
-      details,
-    );
+    try {
+      await _notifications.show(
+        9001,
+        'Daily workout reminder',
+        message,
+        details,
+      );
+    } catch (e) {
+      debugPrint('ReminderService: failed to show daily reminder: $e');
+    }
 
     await settingsService.markReminderSent();
   }
@@ -160,12 +138,24 @@ class ReminderService {
 
   Future<void> scheduleWeeklyNotifications(WorkoutSchedule schedule) async {
     await initialize();
-    await cancelWeeklyNotifications();
 
-    if (!schedule.enabled || schedule.days.isEmpty) return;
+    try {
+      await cancelWeeklyNotifications();
+    } catch (e) {
+      debugPrint('ReminderService: failed to clear previous weekly reminders: $e');
+    }
+
+    if (!schedule.enabled || schedule.days.isEmpty) {
+      debugPrint('ReminderService: weekly reminders cleared (schedule disabled or no days selected)');
+      return;
+    }
 
     final selectedDays = List<int>.from(schedule.days)..sort();
     final daysToSchedule = selectedDays.take(schedule.frequencyPerWeek).toList();
+    debugPrint(
+      'ReminderService: scheduling weekly reminders — days=$daysToSchedule '
+      'time=${schedule.hour}:${schedule.minute}',
+    );
 
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -202,15 +192,20 @@ class ReminderService {
         scheduled = scheduled.add(const Duration(days: 1));
       }
 
-      await _notifications.zonedSchedule(
-        id,
-        'Workout Reminder',
-        messages[rng.nextInt(messages.length)],
-        scheduled,
-        details,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-      );
+      try {
+        await _notifications.zonedSchedule(
+          id,
+          'Workout Reminder',
+          messages[rng.nextInt(messages.length)],
+          scheduled,
+          details,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        );
+        debugPrint('ReminderService: scheduled weekly reminder id=$id weekday=$day at $scheduled');
+      } catch (e) {
+        debugPrint('ReminderService: failed to schedule weekly reminder for day $day: $e');
+      }
     }
   }
 
@@ -241,12 +236,25 @@ class ReminderService {
       iOS: DarwinNotificationDetails(),
     );
 
-    await _notifications.show(
-      9002,
-      'Schedule saved!',
-      'Reminders set for $dayNames at ${schedule.timeLabel}.',
-      details,
-    );
+    try {
+      await _notifications.show(
+        9002,
+        'Schedule saved!',
+        'Reminders set for $dayNames at ${schedule.timeLabel}.',
+        details,
+      );
+    } catch (e) {
+      debugPrint('ReminderService: failed to show schedule confirmation: $e');
+    }
+  }
+
+  Future<void> _setLocalLocation() async {
+    try {
+      final localTz = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(localTz.identifier));
+    } catch (e) {
+      debugPrint('Failed to set local timezone: $e');
+    }
   }
 
   Future<void> _requestPermissions() async {
