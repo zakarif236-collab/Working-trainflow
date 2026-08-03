@@ -1171,6 +1171,18 @@ const _kCountdownBeepsEnabled = 'settings.countdownBeepsEnabled';
 const _kTransitionSoundEnabled = 'settings.transitionSoundEnabled';
 const _kMusicDuckingEnabled = 'settings.musicDuckingEnabled';
 
+List<WorkoutSessionEntry> mergeSessionsByTimestamp(
+  List<WorkoutSessionEntry> local,
+  List<WorkoutSessionEntry> remote,
+) {
+  final byKey = <int, WorkoutSessionEntry>{
+    for (final s in [...local, ...remote]) s.completedAt.millisecondsSinceEpoch: s,
+  };
+  final merged = byKey.values.toList()
+    ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+  return merged.take(_kSessionStorageCap).toList(growable: false);
+}
+
 Map<String, dynamic> sessionsToFirestoreMap(List<WorkoutSessionEntry> sessions) {
   final sorted = List<WorkoutSessionEntry>.from(sessions)
     ..sort((a, b) => b.completedAt.compareTo(a.completedAt));

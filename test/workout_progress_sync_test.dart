@@ -109,4 +109,27 @@ void main() {
     final remote = insightsAt(DateTime(2026, 8, 3), total: 4);
     expect(pickNewerInsights(emptyLocal, remote), same(remote));
   });
+
+  test('mergeSessionsByTimestamp unions and dedups by timestamp key', () {
+    final local = [entry(1000), entry(2000), entry(2000)];
+    final remote = [entry(2000), entry(3000)];
+
+    final merged = mergeSessionsByTimestamp(local, remote);
+
+    expect(merged.length, 3);
+    expect(
+      merged.map((s) => s.completedAt.millisecondsSinceEpoch).toList(),
+      [3000, 2000, 1000],
+    );
+  });
+
+  test('mergeSessionsByTimestamp caps the union', () {
+    final local = List.generate(60, (i) => entry(1000 + i));
+    final remote = List.generate(60, (i) => entry(1_000_000 + i));
+
+    final merged = mergeSessionsByTimestamp(local, remote);
+
+    expect(merged.length, 100);
+    expect(merged.first.completedAt.millisecondsSinceEpoch, 1_000_059);
+  });
 }
