@@ -71,24 +71,15 @@ class _FirstPageState extends State<FirstPage> {
       // startup never blocks on a Firestore read that cannot complete.
       if (ConnectivityService.instance.isOnline) {
         try {
-          final remoteInsights = await _settingsService
-              .loadInsightsFromFirestore(uid)
+          final result = await _settingsService
+              .mergeRemoteInsights(uid)
               .timeout(_kInsightsNetworkTimeout);
-          final merged = pickNewerInsights(localInsights, remoteInsights);
-
-          final remoteSessions = await _settingsService
-              .loadRecentSessionsFromFirestore(uid)
-              .timeout(_kInsightsNetworkTimeout);
-          if (remoteSessions.isNotEmpty) {
-            sessions = remoteSessions;
-          }
-
           if (!mounted) {
             return;
           }
           setState(() {
-            _insights = merged;
-            _recentSessions = sessions;
+            _insights = result.insights;
+            _recentSessions = result.sessions;
           });
         } catch (_) {
           // Offline or slow network: keep the local data already shown.
