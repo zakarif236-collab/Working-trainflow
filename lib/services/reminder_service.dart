@@ -88,7 +88,17 @@ class ReminderService {
       return;
     }
 
+    final schedule = await settingsService.loadWorkoutSchedule();
+    if (!schedule.enabled) {
+      return;
+    }
+
     final insights = await settingsService.loadInsights();
+    final lastWorkoutAt = insights.lastWorkoutAt;
+    if (lastWorkoutAt != null && _isSameLocalDay(lastWorkoutAt, DateTime.now())) {
+      return;
+    }
+
     final streak = insights.currentStreakDays;
     final message = _pickMessage(streak);
 
@@ -135,6 +145,9 @@ class ReminderService {
     }
     return pool[rng.nextInt(pool.length)];
   }
+
+  bool _isSameLocalDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   Future<void> scheduleWeeklyNotifications(WorkoutSchedule schedule) async {
     await initialize();

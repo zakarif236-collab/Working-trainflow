@@ -279,9 +279,9 @@ class GeminiVoiceService {
     try {
       await player.setFilePath(path);
       await player.play();
-      await player.playerStateStream.firstWhere(
-        (state) => state.processingState == ProcessingState.completed,
-      );
+      await player.playerStateStream
+          .firstWhere((state) => state.processingState == ProcessingState.completed)
+          .timeout(const Duration(seconds: 10));
       return true;
     } catch (_) {
       return false;
@@ -329,6 +329,14 @@ class GeminiVoiceService {
       await player.dispose();
     }
     _clipPlayers.clear();
+  }
+
+  Future<void> stopPreloadedClips() async {
+    for (final player in _clipPlayers.values) {
+      try {
+        await player.stop();
+      } catch (_) {}
+    }
   }
 
   Future<int> getCacheSizeBytes() async {

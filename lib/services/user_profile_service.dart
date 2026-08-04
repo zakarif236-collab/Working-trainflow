@@ -25,9 +25,9 @@ class UserProfileService {
   }
 
   Future<void> updateProfile(String uid, Map<String, dynamic> data) async {
-    await _db.collection('users').doc(uid).update({
+    await _db.collection('users').doc(uid).set({
       ...data,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 }

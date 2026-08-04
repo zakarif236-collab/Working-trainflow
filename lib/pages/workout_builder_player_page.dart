@@ -157,6 +157,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _ticker?.cancel();
+    try { WorkoutForegroundService.instance.stop(); } catch (_) {}
     if (_isComplete || !_hasProgressToResume) {
       unawaited(_settingsService.clearWorkoutBuilderResumeSession());
     } else {

@@ -41,7 +41,11 @@ Future<void> main() async {
   }
   // ✅ Initialize AdMob only on Android/iOS
   if (Platform.isAndroid || Platform.isIOS) {
-    await MobileAds.instance.initialize();
+    try {
+      await MobileAds.instance.initialize();
+    } catch (e) {
+      debugPrint('[main] AdMob init failed: $e');
+    }
   }
 
   try {
@@ -55,7 +59,11 @@ Future<void> main() async {
     debugPrint('AuthService.init failed — proceeding with default state');
   }
 
-  await ConnectivityService.instance.initialize();
+  try {
+    await ConnectivityService.instance.initialize();
+  } catch (e) {
+    debugPrint('[main] Connectivity init failed: $e');
+  }
 
   if (!authService.hasFirebaseSession) {
     if (ConnectivityService.instance.isOnline) {

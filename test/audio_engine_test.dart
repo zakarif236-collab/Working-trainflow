@@ -32,6 +32,19 @@ class _FakeVoiceService extends GeminiVoiceService {
   }
 }
 
+class _ThrowingVoice extends _FakeVoiceService {
+  int throwsRemaining = 1;
+
+  @override
+  Future<bool> playPreloadedClip(String clipName) async {
+    if (throwsRemaining > 0) {
+      throwsRemaining--;
+      throw Exception('boom');
+    }
+    return preloadedClipResult;
+  }
+}
+
 void main() {
   const fingerprint = WorkoutFingerprint(
     workoutId: 'test',
@@ -60,5 +73,19 @@ void main() {
     await waitForFallback(voice);
 
     expect(voice.fallbackText, 'Workout complete!');
+  });
+
+  test('voice queue keeps processing after a throwing announcement', () async {
+    final voice = _ThrowingVoice();
+    final engine = AudioEngine(voice: voice, sfx: SfxService());
+
+    await engine.preloadWorkout(fingerprint);
+
+    await engine.announceCompletion();
+    await engine.announceGreatJob();
+    await waitForFallback(voice);
+
+    expect(voice.fallbackText, 'Great job!');
+    expect(voice.throwsRemaining, 0);
   });
 }

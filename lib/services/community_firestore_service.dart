@@ -133,7 +133,7 @@ class CommunityFirestoreService {
     } catch (_) {
       await SyncQueue.instance.enqueue(SyncAction(
         type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': !currentlyLiked},
+        params: {'workoutId': workoutId, 'isLiked': currentlyLiked},
       ));
     }
   }
@@ -152,8 +152,8 @@ class CommunityFirestoreService {
       }
     } catch (_) {
       await SyncQueue.instance.enqueue(SyncAction(
-        type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': !currentlyFavorited},
+        type: 'favorite_workout',
+        params: {'workoutId': workoutId, 'currentlyFavorited': currentlyFavorited},
       ));
     }
   }
@@ -217,8 +217,8 @@ class CommunityFirestoreService {
       });
     } catch (_) {
       await SyncQueue.instance.enqueue(SyncAction(
-        type: 'like_workout',
-        params: {'workoutId': workoutId, 'isLiked': true},
+        type: 'share_workout',
+        params: {'workoutId': workoutId},
       ));
     }
   }

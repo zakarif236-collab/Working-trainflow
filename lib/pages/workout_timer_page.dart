@@ -1277,6 +1277,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       },
       onReset: () {
         _didRecordCompletionStats = false;
+        _didAnnounceCompletion = false;
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
@@ -1445,6 +1446,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       },
       onReset: () {
         _didRecordCompletionStats = false;
+        _didAnnounceCompletion = false;
         _hasStarted = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
@@ -1458,6 +1460,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
       },
       onRestart: () {
         _hasStarted = false;
+        _didAnnounceCompletion = false;
         _controller.stop(reset: true);
         WakelockPlus.disable();
         try { WorkoutForegroundService.instance.stop(); } catch (_) {}

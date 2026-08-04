@@ -61,6 +61,13 @@ class SyncQueue {
           action.params['workoutId'] as String,
           action.params['isLiked'] as bool,
         );
+      case 'favorite_workout':
+        await firestore.toggleFavorite(
+          action.params['workoutId'] as String,
+          action.params['currentlyFavorited'] as bool,
+        );
+      case 'share_workout':
+        await firestore.incrementShare(action.params['workoutId'] as String);
       case 'save_workout':
         await firestore.toggleSave(
           action.params['workoutId'] as String,
@@ -81,6 +88,8 @@ class SyncQueue {
           action.params['workoutId'] as String,
           action.params['message'] as String,
         );
+      default:
+        throw StateError('Unknown sync action type: ${action.type}');
     }
   }
 

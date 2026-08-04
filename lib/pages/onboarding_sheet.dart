@@ -59,17 +59,23 @@ class _OnboardingSheetState extends State<OnboardingSheet> {
       final uid = widget.authService.currentUserId;
       final displayName = _usernameController.text.trim();
       if (displayName.isNotEmpty) {
-        await UserProfileService().updateProfile(uid, {'displayName': displayName});
+        try {
+          await UserProfileService().updateProfile(uid, {'displayName': displayName});
+        } catch (_) {}
         final settings = SettingsService();
         await settings.saveDisplayName(displayName);
       }
       if (_profileImagePath != null && _profileImagePath!.trim().isNotEmpty) {
-        await UserProfileService().updateProfile(uid, {'profileImagePath': _profileImagePath});
+        try {
+          await UserProfileService().updateProfile(uid, {'profileImagePath': _profileImagePath});
+        } catch (_) {}
         final settings = SettingsService();
         await settings.saveProfileImagePath(_profileImagePath!);
       }
       if (_selectedGoal != null) {
-        await UserProfileService().updateProfile(uid, {'fitnessGoal': _selectedGoal!.name});
+        try {
+          await UserProfileService().updateProfile(uid, {'fitnessGoal': _selectedGoal!.name});
+        } catch (_) {}
       }
       await widget.authService.markOnboardingComplete();
       if (mounted) Navigator.of(context).pop();

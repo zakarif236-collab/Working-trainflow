@@ -30,7 +30,11 @@ class _AudioQueue {
     }
     _isPlaying = true;
     final task = _queue.removeFirst();
-    await task.execute();
+    try {
+      await task.execute();
+    } catch (_) {
+      // A throwing task must not permanently stall the voice queue.
+    }
     _processQueue();
   }
 
@@ -231,8 +235,12 @@ class AudioEngine {
   }
 
   Future<void> playTransitionAtZero() async {
-    await _sfx.playCountdownFinalBeep();
-    await _sfx.playTransitionWhoosh();
+    if (_countdownBeepsEnabled) {
+      await _sfx.playCountdownFinalBeep();
+    }
+    if (_transitionSoundEnabled) {
+      await _sfx.playTransitionWhoosh();
+    }
   }
 
   // --- Sound Effects ---
@@ -319,6 +327,7 @@ class AudioEngine {
     _voiceQueue.clear();
     _voiceQueue.reset();
     await _voice.stop();
+    await _voice.stopPreloadedClips();
     await _voice.stopTts();
     await _sfx.stop();
     await _unduckMusic();

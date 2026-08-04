@@ -134,6 +134,7 @@ class WorkoutController extends ChangeNotifier {
 
       _remainingSeconds -= 1;
       if (_remainingSeconds <= 0) {
+        notifyListeners();
         _moveToNextPhase();
       }
       notifyListeners();

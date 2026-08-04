@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/sync_queue.dart';
 
 class ConnectivityService {
@@ -38,6 +39,7 @@ class ConnectivityService {
     try {
       SyncQueue.instance.processQueue();
     } catch (_) {}
+    unawaited(SettingsService().syncWorkoutProgressToFirestore());
   }
 
   void dispose() {
