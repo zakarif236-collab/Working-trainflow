@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:my_app/models/workout_models.dart';
 import 'package:my_app/models/workout_schedule.dart';
+import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/community_firestore_service.dart';
 import 'package:my_app/services/connectivity_service.dart';
 import 'package:my_app/services/push_notification_service.dart';
@@ -15,6 +16,34 @@ const int _kMaxWorkoutSets = 50;
 const Duration _kFirestoreNetworkTimeout = Duration(seconds: 8);
 
 const int _kSessionStorageCap = 100;
+
+/// Resolves the per-account namespace for user-owned SharedPreferences keys so
+/// stats, schedule and profile data don't leak across accounts on a shared
+/// device. Returns the original key unchanged when identity isn't resolved.
+String _userKey(String base) {
+  final uid = AuthService.resolvedUserId;
+  if (uid.isEmpty) return base;
+  return '$base.$uid';
+}
+
+/// Keys that held per-user data before account namespacing was introduced.
+/// Migrated once into the current account's namespace on first access.
+const List<String> _legacyUserKeys = [
+  'insights.displayName',
+  'insights.profileImagePath',
+  'insights.bio',
+  'insights.totalWorkouts',
+  'insights.totalSeconds',
+  'insights.currentStreakDays',
+  'insights.bestStreakDays',
+  'insights.lastWorkoutEpochDay',
+  'insights.lastWorkoutMillis',
+  'insights.recentSessions',
+  'reminders.lastReminderEpochDay',
+  'workout_schedule',
+  'profile.workoutBuilderRoutines',
+  'profile.workoutBuilderResumeSession',
+];
 
 class InsightsMergeResult {
   const InsightsMergeResult({required this.insights, required this.sessions});
@@ -153,6 +182,48 @@ class WorkoutSessionEntry {
 }
 
 class SettingsService {
+  static Future<void>? _userKeyMigration;
+
+  /// Runs the legacy-key → namespaced-key migration exactly once per process.
+  Future<void> _ensureUserKeysMigrated() {
+    if (AuthService.resolvedUserId.isEmpty) {
+      // Identity not resolved yet — don't cache, so we retry once it settles.
+      return _migrateUserKeys();
+    }
+    return _userKeyMigration ??= _migrateUserKeys();
+  }
+
+  /// Public trigger for the once-per-process legacy → namespaced migration.
+  /// Call after sign-in settles so the account namespace is final.
+  static Future<void> migrateUserData() async {
+    await SettingsService()._ensureUserKeysMigrated();
+  }
+
+  static Future<void> _migrateUserKeys() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final base in _legacyUserKeys) {
+        final nsKey = _userKey(base);
+        if (nsKey == base) continue;
+        if (prefs.containsKey(nsKey)) continue;
+        if (!prefs.containsKey(base)) continue;
+        final value = prefs.get(base);
+        if (value is String) {
+          await prefs.setString(nsKey, value);
+        } else if (value is int) {
+          await prefs.setInt(nsKey, value);
+        } else if (value is bool) {
+          await prefs.setBool(nsKey, value);
+        } else if (value is double) {
+          await prefs.setDouble(nsKey, value);
+        }
+        await prefs.remove(base);
+      }
+    } catch (_) {
+      // Migration is best-effort; storage continues to function either way.
+    }
+  }
+
   Future<int> loadBuilderBuildsRemaining() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_kBuilderBuildsInitialized) != true) {
@@ -213,6 +284,7 @@ class SettingsService {
   }
 
   Future<WorkoutBuilderResumeSession?> loadWorkoutBuilderResumeSession() async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString(_kWorkoutBuilderResumeSession);
     if (encoded == null || encoded.trim().isEmpty) {
@@ -247,6 +319,7 @@ class SettingsService {
   }
 
   Future<List<WorkoutBuilderRoutine>> loadWorkoutBuilderRoutines() async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString(_kWorkoutBuilderRoutines);
     if (encoded == null || encoded.trim().isEmpty) {
@@ -806,6 +879,7 @@ class SettingsService {
   }
 
   Future<WorkoutInsights> loadInsights() async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
 
     final lastWorkoutMillis = prefs.getInt(_kLastWorkoutMillis);
@@ -926,6 +1000,7 @@ class SettingsService {
   }
 
   Future<List<WorkoutSessionEntry>> loadRecentSessions({int limit = 7}) async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString(_kRecentSessions);
     if (encoded == null || encoded.trim().isEmpty) {
@@ -1003,6 +1078,7 @@ class SettingsService {
   }
 
   Future<bool> shouldSendMissedWorkoutReminder({DateTime? now}) async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final current = now ?? DateTime.now();
     final todayEpochDay = _epochDay(current);
@@ -1022,6 +1098,7 @@ class SettingsService {
     DateTime? when,
     WorkoutConfig? config,
   }) async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final now = when ?? DateTime.now();
 
@@ -1117,9 +1194,10 @@ class SettingsService {
 
   // --- Workout Schedule ---
 
-  static const _scheduleKey = 'workout_schedule';
+  static String get _scheduleKey => _userKey('workout_schedule');
 
   Future<WorkoutSchedule> loadWorkoutSchedule() async {
+    await _ensureUserKeysMigrated();
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_scheduleKey);
     if (raw == null || raw.isEmpty) {
@@ -1176,22 +1254,22 @@ const _kMuteVoiceWhileMusicPlays = 'settings.muteVoiceWhileMusicPlays';
 const _kVoiceCueVolume = 'settings.voiceCueVolume';
 const _kVoiceCueRate = 'settings.voiceCueRate';
 
-const _kDisplayName = 'insights.displayName';
-const _kProfileImagePath = 'insights.profileImagePath';
-const _kBio = 'insights.bio';
-const _kTotalWorkouts = 'insights.totalWorkouts';
-const _kTotalSeconds = 'insights.totalSeconds';
-const _kCurrentStreakDays = 'insights.currentStreakDays';
-const _kBestStreakDays = 'insights.bestStreakDays';
-const _kLastWorkoutEpochDay = 'insights.lastWorkoutEpochDay';
-const _kLastWorkoutMillis = 'insights.lastWorkoutMillis';
-const _kRecentSessions = 'insights.recentSessions';
-const _kLastReminderEpochDay = 'reminders.lastReminderEpochDay';
+String get _kDisplayName => _userKey('insights.displayName');
+String get _kProfileImagePath => _userKey('insights.profileImagePath');
+String get _kBio => _userKey('insights.bio');
+String get _kTotalWorkouts => _userKey('insights.totalWorkouts');
+String get _kTotalSeconds => _userKey('insights.totalSeconds');
+String get _kCurrentStreakDays => _userKey('insights.currentStreakDays');
+String get _kBestStreakDays => _userKey('insights.bestStreakDays');
+String get _kLastWorkoutEpochDay => _userKey('insights.lastWorkoutEpochDay');
+String get _kLastWorkoutMillis => _userKey('insights.lastWorkoutMillis');
+String get _kRecentSessions => _userKey('insights.recentSessions');
+String get _kLastReminderEpochDay => _userKey('reminders.lastReminderEpochDay');
 const _kBuilderBuildsRemaining = 'builder.buildsRemaining';
 const _kBuilderBuildsInitialized = 'builder.buildsInitialized';
 const _kBuilderAdWatches = 'builder.adWatches';
-const _kWorkoutBuilderRoutines = 'profile.workoutBuilderRoutines';
-const _kWorkoutBuilderResumeSession = 'profile.workoutBuilderResumeSession';
+String get _kWorkoutBuilderRoutines => _userKey('profile.workoutBuilderRoutines');
+String get _kWorkoutBuilderResumeSession => _userKey('profile.workoutBuilderResumeSession');
 const _kCommunityWorkouts = 'community.workouts';
 const _kCreatorFollowerCounts = 'community.creatorFollowerCounts';
 const _kLocalCreatorId = 'user.local';

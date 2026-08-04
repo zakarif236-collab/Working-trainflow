@@ -165,6 +165,36 @@ class WorkoutController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fast-forwards the running timer by the real time that passed while the
+  /// app was backgrounded, advancing through any phases that elapsed during
+  /// that time. Needed because platform timers can be throttled or suspended
+  /// in the background, so the in-app ticker alone can drift from wall-clock.
+  void reconcileElapsed(Duration elapsed) {
+    if (!_isRunning || _timeline.isEmpty || isComplete) {
+      return;
+    }
+    var secondsLeft = elapsed.inSeconds;
+    if (secondsLeft <= 0) {
+      return;
+    }
+    while (secondsLeft > 0 && _isRunning && !isComplete) {
+      if (_remainingSeconds <= 0) {
+        _moveToNextPhase();
+        continue;
+      }
+      if (secondsLeft >= _remainingSeconds) {
+        secondsLeft -= _remainingSeconds;
+        _remainingSeconds = 0;
+        notifyListeners();
+        _moveToNextPhase();
+      } else {
+        _remainingSeconds -= secondsLeft;
+        secondsLeft = 0;
+        notifyListeners();
+      }
+    }
+  }
+
   String? takeError() {
     final value = _error;
     _error = null;

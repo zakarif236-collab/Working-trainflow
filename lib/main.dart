@@ -66,20 +66,42 @@ Future<void> main() async {
   }
 
   if (!authService.hasFirebaseSession) {
-    if (ConnectivityService.instance.isOnline) {
+    // Cold start: FirebaseAuth may still be restoring a cached session, so a
+    // null currentUser here does not mean this device has no account. Give any
+    // persisted session a chance to restore before creating a fresh anonymous
+    // user — otherwise the restore can race and clobber the real account.
+    if (authService.hasCachedSession) {
       try {
-        await authService
-            .signInAnonymously()
-            .timeout(const Duration(seconds: 8));
+        await authService.waitForRestoredSession();
       } catch (_) {
-        debugPrint('[main] Firebase Auth unavailable, using local UID fallback');
+        debugPrint('[main] Failed waiting for session restore');
       }
-    } else {
-      debugPrint('[main] Offline — skipping anonymous sign-in, using local UID fallback');
+    }
+
+    if (!authService.hasFirebaseSession) {
+      if (ConnectivityService.instance.isOnline) {
+        try {
+          await authService
+              .signInAnonymously()
+              .timeout(const Duration(seconds: 8));
+        } catch (_) {
+          debugPrint('[main] Firebase Auth unavailable, using local UID fallback');
+        }
+      } else {
+        debugPrint('[main] Offline — skipping anonymous sign-in, using local UID fallback');
+      }
     }
   }
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Identity is settled — move legacy per-user prefs into the account
+  // namespace so local stats don't mix across accounts on this device.
+  try {
+    await SettingsService.migrateUserData();
+  } catch (_) {
+    debugPrint('[main] User-data key migration skipped');
+  }
 
   try {
     await NotificationService.instance.load();

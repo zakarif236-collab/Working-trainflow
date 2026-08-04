@@ -10,6 +10,7 @@ import 'package:my_app/services/audio_engine.dart';
 import 'package:my_app/pages/audio_settings_page.dart';
 import 'package:my_app/services/gemini_voice_service.dart';
 import 'package:my_app/services/music_service.dart';
+import 'package:my_app/services/notification_service.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/services/settings_service.dart';
 import 'package:my_app/services/sfx_service.dart';
@@ -107,6 +108,7 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   bool _hasStarted = false;
   List<SongModel> _songs = const [];
   List<String> _exerciseNames = [];
+  DateTime? _backgroundedAt;
 
   @override
   void initState() {
@@ -166,9 +168,20 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       if (_hasStarted && _controller.isRunning) {
+        _backgroundedAt = DateTime.now();
         WorkoutForegroundService.instance.promoteToForeground();
       }
     } else if (state == AppLifecycleState.resumed) {
+      final backgroundedAt = _backgroundedAt;
+      _backgroundedAt = null;
+      if (backgroundedAt != null && _controller.isRunning) {
+        // Reconcile with wall-clock time in case timers were throttled or
+        // suspended while the app was in the background. This also keeps the
+        // countdown honest if the OS froze the app's isolate.
+        _controller.reconcileElapsed(
+          DateTime.now().difference(backgroundedAt),
+        );
+      }
       WorkoutForegroundService.instance.demoteToBackground();
     }
   }
@@ -717,6 +730,14 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
           await _settingsService.recordWorkoutCompletion(
             _controller.totalWorkoutSeconds,
             config: _controller.config,
+          );
+          await NotificationService.instance.addNotification(
+            AppNotification(
+              id: 'achievement.workout.${DateTime.now().millisecondsSinceEpoch}',
+              type: NotificationType.achievement,
+              actorUsername: 'You',
+              message: 'Workout complete — keep the streak alive!',
+            ),
           );
           if (mounted && _isVo2MaxFourByFour(_controller.config)) {
             _showMessage(

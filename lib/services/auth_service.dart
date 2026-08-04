@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -54,17 +55,58 @@ class AuthService {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   String get currentUserId {
-    final live = _auth.currentUser?.uid;
-    if (live != null) return live;
-    if (_cachedUid != null) {
-      debugPrint('[AuthService] Falling back to _cachedUid: $_cachedUid');
-      return _cachedUid!;
-    }
+    final resolved = AuthService.resolvedUserId;
+    if (resolved.isNotEmpty) return resolved;
     debugPrint('[AuthService] No Firebase UID — using local device UID');
-    return _localUid ?? 'fallback_${DateTime.now().microsecondsSinceEpoch}';
+    return 'fallback_${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  /// Stable per-device identity (Firebase UID when signed in, otherwise the
+  /// cached or local device UID). Used to namespace per-user local storage so
+  /// stats and profile data don't leak across accounts on a shared device.
+  /// Returns an empty string when identity is not resolved yet.
+  static String get resolvedUserId {
+    try {
+      final live = FirebaseAuth.instance.currentUser?.uid;
+      if (live != null) return live;
+    } catch (_) {
+      // Firebase is not initialized yet (unit tests, very early startup).
+    }
+    if (_cachedUid != null) return _cachedUid!;
+    return _localUid ?? '';
   }
 
   bool get hasFirebaseSession => _auth.currentUser != null;
+
+  /// Whether a Firebase session was cached on this device during a previous
+  /// run. Unlike [hasFirebaseSession] this is meaningful at cold start, before
+  /// FirebaseAuth has finished restoring the persisted session.
+  bool get hasCachedSession => _cachedUid != null;
+
+  /// Cold-start helper: waits for FirebaseAuth to finish restoring a cached
+  /// session (if any) before callers decide to sign in anonymously. Without
+  /// this, `currentUser` can be null at cold start while a real session is
+  /// still being restored, causing a fresh anonymous user to clobber it.
+  Future<bool> waitForRestoredSession({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    if (_auth.currentUser != null) return true;
+    try {
+      final restored = await _auth
+          .authStateChanges()
+          .firstWhere((user) => user != null)
+          .timeout(timeout, onTimeout: () => null);
+      if (restored != null) {
+        await _saveCachedUid(restored.uid);
+        return true;
+      }
+    } on TimeoutException {
+      // No session was restored within the window — treat as signed out.
+    } catch (_) {
+      debugPrint('[AuthService] Failed waiting for session restore');
+    }
+    return false;
+  }
 
   String? get currentEmail => _auth.currentUser?.email;
 

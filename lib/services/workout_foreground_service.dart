@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -14,6 +15,13 @@ class WorkoutForegroundService {
   static const _channelName = 'Workout Timer';
   static const _notificationId = 888;
 
+  /// Companion interactive notification shown while the service is promoted to
+  /// foreground. The plugin's own foreground notification cannot carry action
+  /// buttons, so this one provides the Pause/Resume and Stop controls.
+  static const _actionNotificationId = 889;
+  static const _pauseActionId = 'workout.pause';
+  static const _stopActionId = 'workout.stop';
+
   final FlutterBackgroundService _service = FlutterBackgroundService();
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
@@ -23,6 +31,8 @@ class WorkoutForegroundService {
   bool _isRunning = false;
   bool get isRunning => _isRunning;
 
+  bool _actionForwarderAttached = false;
+
   // Current workout state for notification
   String _workoutName = 'Workout';
   String _exerciseName = '';
@@ -31,6 +41,7 @@ class WorkoutForegroundService {
   int _totalSets = 3;
   bool _isPaused = false;
   bool _isMusicPlaying = false;
+  String _lastActionContent = '';
 
   /// Cancel any stale notification (call on app launch to clean up leftovers)
   static Future<void> cancelStaleNotifications() async {
@@ -60,6 +71,7 @@ class WorkoutForegroundService {
     _totalSets = totalSets;
     _isPaused = false;
     _isMusicPlaying = isMusicPlaying;
+    _lastActionContent = '';
 
     await _initLocalNotifications();
     await _createNotificationChannel();
@@ -80,6 +92,22 @@ class WorkoutForegroundService {
 
     await _service.startService();
     _isRunning = true;
+
+    // Forward any 'action' events the background isolate bounces back to the
+    // main isolate so the UI can react to notification actions. Attached once,
+    // after configure() so the platform event channel is live.
+    if (!_actionForwarderAttached) {
+      _actionForwarderAttached = true;
+      try {
+        _service.on('action').listen((data) {
+          if (data != null && data['action'] is String) {
+            _actionStreamController.add(data['action'] as String);
+          }
+        });
+      } catch (_) {
+        // Unsupported platform (e.g. tests/desktop) — no action forwarding.
+      }
+    }
   }
 
   /// Promote to foreground — shows the notification (call when app goes to background).
@@ -87,12 +115,19 @@ class WorkoutForegroundService {
     if (!_isRunning) return;
     _updateForegroundNotificationInfo();
     _service.invoke('setAsForeground');
+    if (Platform.isAndroid) {
+      _lastActionContent = '';
+      await _showActionNotification();
+    }
   }
 
   /// Demote to background — hides the notification (call when app returns to foreground).
   Future<void> demoteToBackground() async {
     if (!_isRunning) return;
     _service.invoke('setAsBackground');
+    if (Platform.isAndroid) {
+      await _localNotifications.cancel(_actionNotificationId);
+    }
   }
 
   /// Stop the service and remove notification
@@ -102,6 +137,9 @@ class WorkoutForegroundService {
     _service.invoke('stop');
     _isRunning = false;
 
+    if (Platform.isAndroid) {
+      await _localNotifications.cancel(_actionNotificationId);
+    }
     await _localNotifications.cancel(_notificationId);
   }
 
@@ -123,6 +161,9 @@ class WorkoutForegroundService {
 
     if (_isRunning) {
       _updateForegroundNotificationInfo();
+      if (Platform.isAndroid) {
+        await _showActionNotification();
+      }
     }
   }
 
@@ -144,7 +185,59 @@ class WorkoutForegroundService {
   Future<void> _initLocalNotifications() async {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    await _localNotifications.initialize(initSettings);
+    await _localNotifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: _onNotificationAction,
+    );
+  }
+
+  /// Show (or update) the companion interactive notification with action
+  /// buttons. Deduped by content so we don't re-post on every tick.
+  Future<void> _showActionNotification() async {
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
+    final content = '$_exerciseName • Set $_currentSet/$_totalSets • $timeStr'
+        '${_isMusicPlaying ? ' • Music' : ''}'
+        '${_isPaused ? ' • Paused' : ''}';
+    if (content == _lastActionContent) return;
+    _lastActionContent = content;
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: 'Shows workout progress and controls',
+        importance: Importance.high,
+        priority: Priority.high,
+        onlyAlertOnce: true,
+        actions: [
+          AndroidNotificationAction(
+            _pauseActionId,
+            _isPaused ? 'Resume' : 'Pause',
+          ),
+          AndroidNotificationAction(_stopActionId, 'Stop'),
+        ],
+      ),
+    );
+    await _localNotifications.show(
+      _actionNotificationId,
+      _workoutName,
+      content,
+      details,
+      payload: 'workout_controls',
+    );
+  }
+
+  /// Handle taps on the companion notification's action buttons.
+  void _onNotificationAction(NotificationResponse response) {
+    if (response.payload != 'workout_controls') return;
+    switch (response.actionId) {
+      case _pauseActionId:
+        _actionStreamController.add(_isPaused ? 'resume' : 'pause');
+      case _stopActionId:
+        _actionStreamController.add('stop');
+    }
   }
 
   Future<void> _createNotificationChannel() async {
@@ -193,7 +286,8 @@ class WorkoutForegroundService {
     // Handle notification action callbacks from main isolate
     service.on('action').listen((event) {
       if (event != null) {
-        _actionStreamController.add(event['action'] as String);
+        // Bounce back to the main isolate, which owns the UI-facing stream.
+        service.invoke('action', event);
       }
     });
   }
