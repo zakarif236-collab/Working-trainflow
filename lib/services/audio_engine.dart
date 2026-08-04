@@ -159,9 +159,9 @@ class AudioEngine {
       await _duckMusic();
       bool played = false;
       if (_isPreloaded) {
-        await _voice.playPreloadedClip(clipName);
-        played = true;
-      } else {
+        played = await _voice.playPreloadedClip(clipName);
+      }
+      if (!played) {
         played = await _voice.playClip(fp, clipName);
       }
       if (!played) {
