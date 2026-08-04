@@ -1,58 +1,46 @@
-### Task 6: Model + SyncQueue + SettingsService — Utility Changes
+### Task 6: Profile page uses `mergeRemoteInsights`
 
 **Files:**
-- Modify: `lib/models/workout_models.dart`
-- Modify: `lib/services/sync_queue.dart`
-- Modify: `lib/services/settings_service.dart`
+- Modify: `lib/pages/first_page.dart` (online branch of `_loadInsights`)
 
 **Interfaces:**
-- Produces: `WorkoutBuilderRoutine.fingerprint` (String), `SyncQueue.clear()`, `SettingsService.deduplicateWorkoutRoutines()`
+- Consumes: `SettingsService.mergeRemoteInsights(String uid)` → `InsightsMergeResult` (Task 5).
+- Produces: Profile page renders and persists the merged union.
 
-**Changes:**
+- [ ] **Step 1: Update the online branch**
 
-1. In `lib/models/workout_models.dart`, add `fingerprint` getter to `WorkoutBuilderRoutine` class. Place it after `estimatedDurationSeconds` and before `copyWith`:
-
-```dart
-String get fingerprint {
-  final buffer = StringBuffer(name.trim().toLowerCase());
-  for (final exercise in exercises) {
-    buffer.write('|${exercise.name.trim().toLowerCase()}');
-    buffer.write(':${exercise.workSeconds}:${exercise.restSeconds}');
-  }
-  return buffer.toString();
-}
-```
-
-2. In `lib/services/sync_queue.dart`, add `clear()` method after `processQueue` and before `_execute`:
+In `lib/pages/first_page.dart`, replace the entire body of the online `if (ConnectivityService.instance.isOnline)` block (which currently reads remote insights and sessions separately) with:
 
 ```dart
-Future<void> clear() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(_queueKey);
-}
+      if (ConnectivityService.instance.isOnline) {
+        try {
+          final result = await _settingsService
+              .mergeRemoteInsights(uid)
+              .timeout(_kInsightsNetworkTimeout);
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _insights = result.insights;
+            _recentSessions = result.sessions;
+          });
+        } catch (_) {
+          // Offline or slow network: keep the local data already shown.
+        }
+      }
 ```
 
-3. In `lib/services/settings_service.dart`, add `deduplicateWorkoutRoutines()` method. Place it near the end of the class, before the closing brace (after `clearWorkoutSchedule` or any existing method):
+- [ ] **Step 2: Run analyze and tests**
 
-```dart
-Future<void> deduplicateWorkoutRoutines() async {
-  final routines = await loadWorkoutBuilderRoutines();
-  if (routines.length < 2) return;
-  final seen = <String>{};
-  final deduped = <WorkoutBuilderRoutine>[];
-  for (final routine in routines) {
-    if (seen.add(routine.fingerprint)) {
-      deduped.add(routine);
-    }
-  }
-  if (deduped.length == routines.length) return;
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(
-    _kWorkoutBuilderRoutines,
-    jsonEncode(deduped.map((e) => e.toJson()).toList()),
-  );
-}
+Run: `flutter analyze` then `flutter test test/workout_progress_sync_test.dart`
+Expected: no new issues; ALL PASS.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add lib/pages/first_page.dart
+git commit -m "feat: profile page renders and persists the merged sync union"
 ```
 
-Run `dart analyze lib/models/workout_models.dart lib/services/sync_queue.dart lib/services/settings_service.dart`
-Commit: `feat: add fingerprint, clear(), and dedup helpers`
+---
+

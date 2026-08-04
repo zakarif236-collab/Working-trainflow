@@ -1,153 +1,114 @@
-### Task 3: Wire `EarnPointsCard` into the page + unify save-flow reward to +1
+### Task 3: `computeStreaks` + shared `_epochDayOf`
 
 **Files:**
-- Modify: `lib/pages/workout_builder_page.dart` (import ~line 11; state fields ~line 35; `initState` ~line 46; new methods after `_loadBuilderBuildsRemaining` ~line 62; `_saveRoutine` line 285; `_promptWatchAdForBuild` line 309; mount card above the "Create Workout" card ~line 465)
+- Modify: `lib/services/settings_service.dart` (top-level helpers; delegate class `_epochDay`)
+- Test: `test/workout_progress_sync_test.dart`
 
 **Interfaces:**
-- Consumes: `EarnPointsCard` from Task 2; `loadAdWatchCountForToday` / `recordAdWatchForToday` from Task 1.
-- Produces: page behavior — card above the builder card (only when `widget.showBuilder`), reward callback records the watch then adds 1 build point, button disabled at cap.
+- Produces: `int _epochDayOf(DateTime date)` (top-level); `(int current, int best) computeStreaks(List<WorkoutSessionEntry> sessions)` — `current` = streak ending at the most recent session day, `best` = longest consecutive run. Consumed by Task 4.
 
-- [ ] **Step 1: Add the import**
+- [ ] **Step 1: Write the failing tests**
 
-In `lib/pages/workout_builder_page.dart`, after the existing imports (line 11):
+Append to `test/workout_progress_sync_test.dart`:
 
 ```dart
-import 'package:my_app/widgets/earn_points_card.dart';
+  test('computeStreaks counts consecutive days ending at the most recent', () {
+    // Days 10, 9, 8, then a gap, then 5, 4.
+    final sessions = [
+      entry(DateTime(2026, 8, 4).millisecondsSinceEpoch),
+      entry(DateTime(2026, 8, 3).millisecondsSinceEpoch),
+      entry(DateTime(2026, 8, 2).millisecondsSinceEpoch),
+      entry(DateTime(2026, 7, 30).millisecondsSinceEpoch),
+      entry(DateTime(2026, 7, 29).millisecondsSinceEpoch),
+    ];
+
+    final (current, best) = computeStreaks(sessions);
+
+    expect(current, 3); // Aug 4, 3, 2
+    expect(best, 3);
+  });
+
+  test('computeStreaks handles single session and empty list', () {
+    final (singleCurrent, singleBest) = computeStreaks([entry(1000)]);
+    expect(singleCurrent, 1);
+    expect(singleBest, 1);
+
+    final (emptyCurrent, emptyBest) = computeStreaks(const []);
+    expect(emptyCurrent, 0);
+    expect(emptyBest, 0);
+  });
 ```
 
-- [ ] **Step 2: Add state fields**
+- [ ] **Step 2: Run tests to verify they fail**
 
-In `_WorkoutBuilderPageState`, change the block at lines 35-37:
+Run: `flutter test test/workout_progress_sync_test.dart --plain-name "computeStreaks"`
+Expected: FAIL — function not defined.
+
+- [ ] **Step 3: Implement the helpers**
+
+Add a top-level day helper next to the other top-level functions:
 
 ```dart
-  int _builderBuildsRemaining = 1;
-  RewardedAd? _rewardedAd;
-  VoidCallback? _pendingReward;
+int _epochDayOf(DateTime date) {
+  final normalized = DateTime(date.year, date.month, date.day);
+  return normalized.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+}
 ```
 
-to:
+Add `computeStreaks` directly above `mergeSessionsByTimestamp`:
 
 ```dart
-  static const int _kMaxDailyAdWatches = 5;
+(int current, int best) computeStreaks(List<WorkoutSessionEntry> sessions) {
+  final days = <int>{
+    for (final s in sessions) _epochDayOf(s.completedAt),
+  }.toList()
+    ..sort((a, b) => b.compareTo(a));
+  if (days.isEmpty) return (0, 0);
 
-  int _builderBuildsRemaining = 1;
-  int _todayAdWatches = 0;
-  RewardedAd? _rewardedAd;
-  VoidCallback? _pendingReward;
-```
-
-- [ ] **Step 3: Load the counter in `initState`**
-
-In `initState` (lines 47-52), add the load call after `_loadBuilderBuildsRemaining();`:
-
-```dart
-  @override
-  void initState() {
-    super.initState();
-    _loadSavedRoutines();
-    _loadBuilderBuildsRemaining();
-    _loadAdWatchCountForToday();
-    _loadRewardedAd();
-  }
-```
-
-- [ ] **Step 4: Add the load + reward methods**
-
-After the `_loadBuilderBuildsRemaining` method (which ends at line 62), insert:
-
-```dart
-  Future<void> _loadAdWatchCountForToday() async {
-    final count = await _settingsService.loadAdWatchCountForToday();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _todayAdWatches = count;
-    });
-  }
-
-  void _watchAdForPoint() {
-    _showRewardedAd(() async {
-      await _settingsService.recordAdWatchForToday();
-      await _settingsService.addBuilderBuilds(1);
-      if (!mounted) {
-        return;
+  var run = 1;
+  var best = 1;
+  var current = 1;
+  var firstSegment = true;
+  for (var i = 1; i < days.length; i++) {
+    if (days[i - 1] - days[i] == 1) {
+      run++;
+    } else {
+      if (run > best) best = run;
+      if (firstSegment) {
+        current = run; // streak ending at the most recent session day
+        firstSegment = false;
       }
-      setState(() {
-        _todayAdWatches += 1;
-      });
-      await _loadBuilderBuildsRemaining();
-    });
+      run = 1;
+    }
   }
+  if (run > best) best = run;
+  if (firstSegment) current = run; // no gaps: the whole list is the current streak
+  return (current, best);
+}
 ```
 
-- [ ] **Step 5: Change the save-flow reward to +1**
-
-In `_saveRoutine()` (line 285), change:
+Replace the class `_epochDay` method (line ~1042) with a delegation so both share one implementation:
 
 ```dart
-          await _settingsService.addBuilderBuilds(2);
+  int _epochDay(DateTime date) => _epochDayOf(date);
 ```
 
-to:
+- [ ] **Step 4: Run tests to verify they pass**
 
-```dart
-          await _settingsService.addBuilderBuilds(1);
-```
+Run: `flutter test test/workout_progress_sync_test.dart`
+Expected: ALL PASS (new + existing).
 
-- [ ] **Step 6: Update the save-flow prompt copy**
-
-In `_promptWatchAdForBuild()` (line 300), change the dialog's `content` (currently lines 307-310) from "+2 extra builds" to "+1 extra build". The `content` becomes:
-
-```dart
-          content: const Text(
-            'You have used your free workout build. '
-            'Watch a rewarded ad to unlock 1 extra build?',
-          ),
-```
-
-- [ ] **Step 7: Mount the card above the "Create Workout" card**
-
-In `build`, inside the `if (widget.showBuilder) ...[` spread at line 465, insert the card before the existing `Container(` that starts the "Create Workout" card:
-
-```dart
-            if (widget.showBuilder) ...[
-              EarnPointsCard(
-                buildPoints: _builderBuildsRemaining,
-                todayWatches: _todayAdWatches,
-                maxDailyWatches: _kMaxDailyAdWatches,
-                onWatchAd: _todayAdWatches >= _kMaxDailyAdWatches
-                    ? null
-                    : _watchAdForPoint,
-              ),
-              const SizedBox(height: 16),
-              Container(
-```
-
-(The `Container(` is the pre-existing "Create Workout" card start at line 466; only the card, the spacing, and the `if` line are shown above — the rest of that block is unchanged.)
-
-- [ ] **Step 8: Run the full test suite**
-
-Run: `flutter test`
-Expected: The two new test files pass, and the previously-passing tests (`builder_builds_test.dart`, `scaled_banner_ad_test.dart`, `header_banner_ad_test.dart`) still pass. The 3 pre-existing `widget_test.dart` failures (`FirebaseException: [core/no-app]` in `AuthService`) are unrelated WIP and remain. Reason this task has no new automated test: `WorkoutBuilderPage` cannot be pumped in a widget test because `_communityService = CommunityFirestoreService.instance` touches `FirebaseFirestore.instance` at field-init, which throws without a Firebase app (same root cause as the pre-existing `widget_test.dart` failures).
-
-- [ ] **Step 9: Run static analysis**
+- [ ] **Step 5: Run analyze**
 
 Run: `flutter analyze`
-Expected: No new issues in `workout_builder_page.dart` (pre-existing issues in WIP files like `community_page.dart`, `home_page.dart`, etc. remain).
+Expected: no new issues.
 
-- [ ] **Step 10: Manual verification checklist (on device/emulator)**
-
-1. Open Workout Builder → the "Earn Points" card shows above "Create Workout", balance reflects current builds, progress shows "0/5 today".
-2. Tap "Watch Ad (+1)" → rewarded ad plays; on reward the balance increases by 1 and progress shows "1/5 today".
-3. After 5 watches, the button is disabled ("0/5" vs "5/5 today" state).
-4. In a new session the next calendar day, the count starts at "0/5 today".
-5. Save-flow prompt (after free build is consumed) says "unlock 1 extra build" and the save proceeds.
-
-- [ ] **Step 11: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add lib/pages/workout_builder_page.dart
-git commit -m "feat: show earn points card and award one build per ad"
+git add lib/services/settings_service.dart test/workout_progress_sync_test.dart
+git commit -m "feat: add streak computation from session dates"
 ```
+
+---
 

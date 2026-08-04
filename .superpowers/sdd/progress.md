@@ -38,3 +38,105 @@
 - Commit 3d003d4 (feat: hybrid sign-in with offline device uid, foreground service rework, timer/ad layout updates): auth_service, workout_foreground_service, audio_engine, community/first/home/main_shell/onboarding/schedule/timer pages, workout_player_widgets, workout_timer_layout, test/builder_builds_test.dart (new).
 - Commit e70bf4e (docs: update superpowers progress ledger and task briefs/reports): .superpowers/sdd process files.
 - Verification: working tree CLEAN; flutter analyze 13 issues (infos + 2 unused_field warnings in workout_foreground_service, pre-existing pattern); flutter test 13 pass / 3 pre-existing widget_test.dart Firebase failures (no regressions).
+
+## Plan: docs/superpowers/plans/2026-08-03-workout-progress-firestore-sync.md
+## BASE: 6146a1e
+
+## Tasks
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | sessionsToFirestoreMap helper + tests | done | 033dfa6 | approved |
+| 2 | syncWorkoutProgressToFirestore + buildWorkoutSyncData | done | d32092d | approved |
+| 3 | saveInsightsToFirestore includes session history | done | 5470388 | approved |
+| 4 | loadRecentSessionsFromFirestore + pickNewerInsights | done | 5f92099 | approved |
+| 5 | Profile load restores newer source + Firestore sessions | done | 30af722 | approved |
+| 6 | Sync on app launch and resume | done | bcd749d | approved |
+| 7 | Draft firestore.rules | done | ac5000b | approved |
+
+## Pre-flight decisions (user-approved 2026-08-03)
+- Tasks 2-3 share a tested `buildWorkoutSyncData` helper (no duplicated stat-field map); Task 3's vacuous smoke test removed, real helper assertions added in Task 2.
+- Task 7 rules access matrix approved as drafted.
+
+## Minor findings (roll-up for final review)
+- T1: empty-list and exactly-30 cases untested in sessionsToFirestoreMap (minor, no action).
+- T1: duplicate completedAt millis silently overwrite in the map (inherent to millis-keyed design, informational).
+- T1: report claimed test file 52 lines; committed file is 35 (reporting inaccuracy, not code).
+- T2: no-op/completion tests print `[core/no-app]` via the sync catch debugPrint (plan-mandated, acceptable noise).
+- T2: no test verifies the actual Firestore write; completion test would pass identically without the hook (inherent to no-Firebase env).
+- T2: no-op test has no expect() — weakest of the three (fine per brief).
+- T4: loader `loadRecentSessionsFromFirestore` has zero test coverage (Firestore-backed, untestable without emulator; plan-mandated).
+- T4: pickNewerInsights equality branch (equal lastWorkoutAt → local) and remoteAt==null branch untested (minor).
+- T6: launch-call ordering after auth init verified by controller (main.dart:76, auth init at 42-61) — ⚠️ resolved, not a gap.
+- T7: report claimed rules file "byte-for-byte" identical to brief but added explanatory comment blocks (cosmetic, logic faithful).
+
+## Plan: docs/superpowers/plans/2026-08-03-multi-device-sync-convergence.md
+## BASE: c09af61
+
+## Tasks
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | Shared session storage cap constant (30 -> 100) | done | a6d0e8f | approved |
+| 2 | mergeSessionsByTimestamp session union | done | 9d1ee20 | approved |
+| 3 | computeStreaks (current, best) | done | c0c5116 | approved |
+| 4 | resolveInsights conflict-safe scalars | done | e82d81b | approved |
+| 5 | mergeRemoteInsights orchestrator | done | e9feb73 | approved |
+| 6 | Profile page renders/persists merged union | done | c6d0554 | approved |
+| 7 | Firestore rules deploy wiring + admin claim | done | 6e5006c | approved |
+| 8 | Full suite verification | done | - | approved |
+
+## Minor findings (roll-up for final review)
+- T1: reviewer confirmed plan's Task 1 site list was INCOMPLETE — a sixth storage/sync cap site exists at `saveInsightsToFirestore` (~settings_service.dart:854). Implementer replaced it too; justified by global constraint (cap at every storage/sync site). Later tasks must not assume plan site lists exhaustive.
+- T1 (minor): `lib/pages/first_page.dart:56` `loadRecentSessions(limit: 30)` — UI display site, hardcoded 30, pre-existing, outside Task 1 scope; reconcile with display-cap intent during Task 6 (touches this file).
+- T1 (minor): only site E (`sessionsToFirestoreMap`) has a cap test; `loadRecentSessionsFromFirestore` 100-cap and `recordWorkoutCompletion` local-store 100-cap unpinned. Breadth gap, not defect.
+- T2 (minor): empty-input path `([], [])` and same-timestamp remote-wins tie-break not directly asserted (implicitly covered). Optional coverage polish, no action.
+- T3 (plan-premise note): plan claimed loadInsights() computes streaks via a local closure returning "oldest segment" — FALSE. git log -S confirms no computeStreaks ever existed; loadInsights() reads streaks from prefs (:811-812); streak VALUES written incrementally in recordWorkoutCompletion (:996-1015). Concrete deliverables were self-contained; implemented verbatim. Decide whether to correct plan's Task 3 context for the record.
+- T3 (minor): no test for current < best case ([10,2,1] → (1,2)) or same-day dedup; one-liner additions suggested.
+- T4 (plan-internal contradiction, controller-adjudicated): brief test passed ASCENDING union [1000..4000] expecting lastWorkoutAt 4000, but verbatim impl uses mergedSessions.first.completedAt (descending contract). Controller approved Option B: keep impl verbatim, change test union to descending [4000,3000,2000,1000]. Plan's Task 4 test snippet should be corrected in the plan doc for the record.
+- T4 (minor, disclosed): fold accumulator renamed sum → total to avoid avoid_types_as_parameter_names lint (semantics unchanged). No test for empty-union recompute or _later tie-break. Near-duplicate max ternaries; recompute test doesn't assert streaks and uses identical displayName so pickNewerInsights selection isn't truly verified.
+- T5 (plan-mandated): mergeRemoteInsights always persists (no no-remote short-circuit) — adjudicated OK; reviewer proved recompute-from-local-only cannot drop loadInsights() data in any consistent state. PLAN-MANDATED GAP for final review: mergeRemoteInsights itself has no direct test (7-key persistence, profile-key exclusion, null-lastWorkoutAt skip) — loaders are Firestore-backed; plan accepted this. Reviewer suggests SharedPreferences-mock test with stubbed loaders.
+- T5 (minor): converge test passes identical insightsAt() args to both resolveInsights calls and asserts only totals; streak/lastWorkoutAt equality unasserted. Stale lastWorkout keys possible if a session-pruning path ever appears (unreachable now, plan-mandated if-branch).
+- T6 (minor): _recentSessions = result.sessions now unconditionally overwrites local (old code kept local when remoteSessions empty) — brief-mandated; keep-local decision lives in mergeRemoteInsights (T5), which returns local when remote empty. OK.
+- T6: first_page.dart online branch simplified to single mergeRemoteInsights call; pickNewerInsights/load*FromFirestore no longer referenced there (verified by reviewer grep).
+- T7 (plan-mandated text bug): brief's verbatim firebase.json was INVALID (9 opens / 8 closes; would nest firestore inside flutter). Implementer inserted exactly one `}` before `,"firestore"`; reviewer independently verified: valid JSON, byte-equivalent to base except firestore section, top-level keys flutter,firestore. Plan's Task 7 Step 1 JSON string should be corrected for the record.
+- T7 (manual dependency): rules now require admin:true custom claim — hard behavioral dependency until Step 5 checklist (Admin SDK setCustomUserClaims, firebase deploy --only firestore:rules, verify admin/non-admin delete) is executed. Documented for user; not run.
+
+## Task 8 verification (controller-run)
+- `flutter test` full suite: 30 passed, 3 failed — exactly the pre-existing widget_test.dart timer-pending failures (Calisthenics quick start / VO2max quick start / Workout timer shown by default), same as baseline. Sync file: 15/15 pass.
+- `flutter analyze`: 11 issues, all pre-existing info lints in OTHER files (community_page.dart, home_page.dart, workout_builder_page.dart, community_firestore_service.dart). No new issues.
+- Manual smoke test (two-device offline convergence) NOT run — requires physical devices; documented for user in plan Task 8 Step 3.
+
+## Final branch review (controller-run, base c09af61 → head 6e5006c)
+- Verdict: ✅ APPROVED. Every seam consistent (JSON format, prefs keys, cap semantics, Firestore round-trip); primary online/offline/multi-device paths converge without losing history; rules wiring sound.
+- IMPORTANT finding (FIXED, USER-APPROVED): recompute path in resolveInsights was not monotonic — legacy cap-30 offline histories (counter 60, only 30 sessions) would recompute to 30 and persist the drop permanently. Fixed in commit 4612738 ("fix: make resolveInsights recompute monotonic for legacy cap-30 histories"): recomputed totalWorkouts/totalSeconds now max against local/remote stored counters. Added regression test "resolveInsights never drops counters below the stored monotonic max". Sync tests now 16/16; analyze unchanged (11 pre-existing infos).
+- Minor findings (documented, no action): truncated-union under-count for 100+10 split histories is design-inherent (spec §2 trade-off); display count varies 30 (offline load) ↔ 100 (online result.sessions), neither matches design's stated 7; profile fields converge render-only (merge persist writes scalar keys only); corrupt-prefs parse→empty-union→zeroed-counters clobber risk; mergeRemoteInsights has no direct test (plan-mandated, Firestore-backed loaders).
+- Post-fix: full suite re-run on 4612738 HEAD — 16 sync tests pass; whole-suite 30 pass + 3 pre-existing widget_test timer failures (baseline).
+
+## Plan: docs/superpowers/plans/2026-08-04-foreground-gating-and-offline-firstframe.md
+## BASE: 70a2103
+
+## Tasks
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | Gate companion notification on foreground state | done | 6a1ad4e | approved |
+| 2 | Decouple first frame from auth resolution on cold start | done | e183748 | approved |
+
+## Task 1 review
+- Verdict: ✅ Spec compliant, Approved. All 6 code steps verbatim; commit touched only workout_foreground_service.dart; no tests (correct per spec constraint).
+- Manual device checklist (brief Steps 1-6) NOT runnable in this environment — USER must verify on device before merge.
+- Minor (roll-up for final review): `_isForegrounded` name is semantically inverted (true = backgrounded/locked); plan-mandated name, doc comment disambiguates. No action.
+
+## Task 2 review
+- Verdict: ✅ Spec compliant, Approved. Old main() fully replaced (no duplicates); ordering/timeouts preserved exactly; runApp reached on every path; commit scoped to lib/main.dart only.
+- Brief extraction encoding artifact: controller's PowerShell brief emitted mojibake (â€”/âœ…) from reading UTF-8-no-BOM plan as ANSI; implementer reproduced intended Unicode; committed file clean.
+- Manual device checklist (airplane-mode cold start, reconnect clobber, deep links) NOT runnable in this environment — USER must verify on device before merge.
+- Minor (roll-up for final review): `FirebaseMessaging.onBackgroundMessage` (main.dart:114) only deferred statement outside try/catch (verbatim per brief; non-throwing sync registration; previously ran pre-runApp). `await Firebase.initializeApp` (main.dart:34) unwrapped pre-runApp (pre-existing, per brief). No action.
+
+## Final whole-branch review (70a2103 → e183748)
+- Verdict: ✅ Ready to merge — Yes. Both fixes faithful to plan; cross-task ordering correct (cancelStaleNotifications still completes before runApp; _finalizeStartup never touches _isForegrounded); flag can't get stuck; _finalizeStartup crash-safe; scope discipline (only the 2 listed files).
+- IMPORTANT (pre-existing, OUT of plan scope, follow-up recommended, NOT blocking): `cancelStaleNotifications()` (workout_foreground_service.dart:52-58) cancels only `_notificationId` (888), never `_actionNotificationId` (889). Process killed while backgrounded with a running workout → companion notification lingers with dead buttons. One-liner fix: also `await plugin.cancel(_actionNotificationId)`. USER: decide whether to do as follow-up commit.
+- Minor (no action): deep-link init now races identity settling (low risk — resolvedUserId stable from AuthService.init); AppLifecycleListener registered before _finalizeStartup completes (duplicate idempotent sync, harmless); first frame can render before NotificationService.load() (cosmetic badge flash); per-task roll-ups all no-ops.
+- Manual device checklists (Task 1 items 2/4/5, Task 2 items 1/2/4) NOT yet run — REQUIRED before release. Also recommended: kill-from-recents stale-889 check.
+
+## Notes
+- Worktree at dispatch: uncommitted `lib/firebase_options.dart` (appId → com.TrainFlow.myapp client) and `lib/widgets/workout_schedule_section.dart` (try/catch hardening) exist; OUTSIDE plan scope — implementers stage only their scoped file per plan commit steps.
+- Subagents dispatched without explicit model (OpenCode task tool has no model param — session default used for all roles).

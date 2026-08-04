@@ -1,42 +1,109 @@
-# Task 3 Report: Wire `EarnPointsCard` into Workout Builder page
+# Task 3 Report: `computeStreaks` + shared `_epochDayOf`
 
 ## Status: DONE_WITH_CONCERNS
 
 ## What I implemented
 
-Applied all code changes verbatim from `task-3-brief.md` (steps 1–7) onto the current working-tree content of `lib/pages/workout_builder_page.dart`:
+Per the brief (verbatim code):
 
-1. Added `import 'package:my_app/widgets/earn_points_card.dart';` after the existing imports.
-2. Added `static const int _kMaxDailyAdWatches = 5;` and `int _todayAdWatches = 0;` to the state fields.
-3. Added `_loadAdWatchCountForToday();` to `initState` (after `_loadBuilderBuildsRemaining();`).
-4. Added `_loadAdWatchCountForToday()` (loads today's watch count from `SettingsService.loadAdWatchCountForToday`) and `_watchAdForPoint()` (shows the rewarded ad, then on reward records the watch via `recordAdWatchForToday()`, adds 1 build via `addBuilderBuilds(1)`, bumps `_todayAdWatches`, and reloads the build balance) after `_loadBuilderBuildsRemaining`.
-5. Changed the save-flow reward in `_saveRoutine` from `addBuilderBuilds(2)` to `addBuilderBuilds(1)`.
-6. Changed the `_promptWatchAdForBuild` dialog copy from "unlock 2 extra builds" to "unlock 1 extra build".
-7. Mounted `EarnPointsCard` inside `if (widget.showBuilder) ...[` above the "Create Workout" `Container`, passing `buildPoints: _builderBuildsRemaining`, `todayWatches: _todayAdWatches`, `maxDailyWatches: _kMaxDailyAdWatches`, and `onWatchAd: _todayAdWatches >= _kMaxDailyAdWatches ? null : _watchAdForPoint` (button disabled at the daily cap).
+- Added top-level `int _epochDayOf(DateTime date)` in `lib/services/settings_service.dart`,
+  placed with the other top-level helpers above `mergeSessionsByTimestamp`.
+- Added top-level `(int current, int best) computeStreaks(List<WorkoutSessionEntry> sessions)`
+  directly above `mergeSessionsByTimestamp`. Corrected semantics:
+  - `current` = run of consecutive days ending at the MOST RECENT session day.
+  - `best` = longest consecutive run anywhere in history.
+  - Empty input returns `(0, 0)`.
+- Replaced the private `SettingsService._epochDay(DateTime)` method body (was an inline
+  normalization + `millisecondsSinceEpoch ~/ Duration.millisecondsPerDay`) with a
+  delegation: `int _epochDay(DateTime date) => _epochDayOf(date);` so both share one
+  implementation. The delegated implementation is byte-identical to the old body, so
+  behavior of all existing `_epochDay` call sites (`loadAppLifetimeDays`,
+  `shouldSendMissedWorkoutReminder`, `markReminderSent`, `recordWorkoutCompletion`)
+  is unchanged.
+- Appended the two tests from the brief to `test/workout_progress_sync_test.dart`.
 
 ## TDD evidence
 
-**Deviation from dispatch (see Concerns):** the dispatch's test steps referenced `test/workout_builder_page_test.dart`, which does **not exist** and has never existed in git history (`git log --all -- test/workout_builder_page_test.dart` → empty). The brief — declared the source of truth — explicitly and verifiably rules out a page widget test: `_WorkoutBuilderPageState` initializes `final CommunityFirestoreService _communityService = CommunityFirestoreService.instance;` at field-init (workout_builder_page.dart:27), which touches `FirebaseFirestore.instance` and throws `FirebaseException: [core/no-app]` in tests (same root cause as the 3 pre-existing `widget_test.dart` failures). So there is no genuinely new RED test for this task; the brief's Step 8 (full-suite + analyze) is the verification signal. I ran the full suite BEFORE and AFTER my edits.
+### RED
 
-- **Baseline (BEFORE edits):** `flutter test` → `00:11 +13 -3: Some tests failed.` All earn-points tests pass (builder_ad_watches_test 6/6, builder_builds_test 2/2, earn_points_card_test 1/1, header_banner_ad_test 3/3, scaled_banner_ad_test 1/1 = 13 green). The 3 failures are pre-existing in `test/widget_test.dart` (`FirebaseException: [core/no-app]` in `AuthService`).
-- **After edits:** `flutter test` → `00:04 +13 -3: Some tests failed.` Identical pass set (13) and identical 3 pre-existing `widget_test.dart` failures with the same stack traces. No regressions.
-- **`flutter analyze lib/pages/workout_builder_page.dart`** → `1 issue found` — `info` `avoid_print` at workout_builder_page.dart:104, the pre-existing `print('Failed to load rewarded ad: $error')` line that I did not touch. No new issues.
+Command: `flutter test test/workout_progress_sync_test.dart --plain-name "computeStreaks"`
+
+Output (abbreviated):
+```
+test/workout_progress_sync_test.dart:146:29: Error: Method not found: 'computeStreaks'.
+    final (current, best) = computeStreaks(sessions);
+                            ^^^^^^^^^^^^^^
+... (3 errors, compilation failed)
+00:00 +0 -1: Some tests failed.
+```
+
+### GREEN
+
+Command: `flutter test test/workout_progress_sync_test.dart`
+
+Output:
+```
+00:00 +12: All tests passed!
+```
+All 12 tests pass (10 pre-existing + 2 new `computeStreaks` tests). The
+`SettingsService: workout progress sync failed: [core/no-app] ...` log lines are the
+expected, intentional no-Firebase test path.
+
+### Analyze
+
+Command: `flutter analyze`
+
+Result: 11 issues found — all pre-existing `info`-level lints in OTHER files
+(`lib/pages/community_page.dart`, `lib/pages/home_page.dart`,
+`lib/pages/workout_builder_page.dart`, `lib/services/community_firestore_service.dart`).
+No issues in `lib/services/settings_service.dart` or `test/workout_progress_sync_test.dart`.
+No new issues introduced.
 
 ## Files changed
 
-- Modified: `lib/pages/workout_builder_page.dart`
-- Commit: `cba9a6c` — "feat: show earn points card and award one build per ad" (1 file, +278/−2)
-- Verified via `git show --stat HEAD`: the commit contains exactly `lib/pages/workout_builder_page.dart` and nothing else. No `git add -A`/`git add .` used; `test/builder_builds_test.dart` and all other WIP remain uncommitted.
+- `lib/services/settings_service.dart` (modified: +38 lines)
+- `test/workout_progress_sync_test.dart` (modified: +26 lines)
 
-## Pre-existing WIP preservation
+## Commit
 
-`lib/pages/workout_builder_page.dart` contained the user's WIP lines before I started (builder-builds integration: import-link/import-workout/copy-link sections, `_communityService` field, build-count `_SummaryChip`, etc.). Per the dispatch, I transcribed only the brief's edits onto the current working-tree content and did not revert/reformat the WIP lines — the `git diff` confirms every pre-existing hunk is present byte-for-byte. Because the brief's Step 11 (`git add lib/pages/workout_builder_page.dart`) stages the whole file, the pre-existing WIP hunks in that file are included in commit `cba9a6c`; this is unavoidable and sanctioned by the dispatch ("lib/pages/workout_builder_page.dart itself may contain WIP lines… do not revert them"). They are NOT described in the commit message.
+`c0c5116` — `feat: add streak computation from session dates` (2 files, +60/-4).
+Only the two task files were staged (`git add` with explicit paths). No unrelated
+files touched/staged/committed.
 
 ## Self-review findings
 
-1. All 7 brief steps verified present in the file post-edit (import, fields, initState, methods, +1 save reward, prompt copy, card mount above Create Workout).
-2. Test output is clean for the task's scope: 13 pass, only the 3 pre-existing, unrelated `widget_test.dart` Firebase-init failures remain.
-3. `git status --short` after commit confirms all other WIP (`.superpowers/sdd/*`, `lib/*`, `android/`, `ios/`, `macos/`, `pubspec.*`, `logo.png`, untracked dirs/files incl. `test/builder_builds_test.dart`) is untouched and unstaged.
-4. **Concern 1 (dispatch vs brief conflict):** the dispatch instructed creating a failing widget test in `test/workout_builder_page_test.dart` and confirming RED→GREEN, and to commit that test file too. That file does not exist and a page widget test is infeasible per the brief's verified reasoning (Firebase at field-init). I followed the brief (source of truth): no new page test, commit contains only the page file.
-5. **Concern 2 (commit message):** dispatch suggested "feat: wire earn points card into workout builder page"; brief's Step 11 says "feat: show earn points card and award one build per ad". I used the brief's wording (declared source of truth). Flagged for the reviewer.
-6. **Concern 3:** like prior tasks, committing the page file necessarily includes its pre-existing WIP hunks (see above); the change itself is intact and unmodified.
+- Empty days set → `(0, 0)` ✓ (tested)
+- Single session → `(1, 1)` ✓ (tested)
+- Two adjacent days `[d, d+1]` → run=2, `firstSegment` stays true → `(2, 2)` ✓ (traced)
+- Gap in middle (`{Aug 4, 3, 2} | gap | {Jul 30, 29}`) → current 3 (run ending at most
+  recent), best 3 ✓ (tested)
+- Gap where the most-recent run is shorter than an older run (`[10, 2, 1]`) →
+  `current = 1`, `best = 2` ✓ (traced: first segment `[10]` sets current=1, later
+  segment `[2,1]` run=2 updates best)
+- `_epochDayOf` normalizes to local midnight before division, so DST-shifted days are
+  handled the same as the old code.
+- Dedup: duplicate epoch days collapse via the `Set`, so two sessions the same day do
+  not inflate a streak. ✓
+
+## Concerns
+
+1. **Discrepancy between the brief's context and the actual code.** The task context and
+   brief state that "the app currently computes streaks inside `loadInsights()`" with "a
+   local `computeStreaks` closure over `Set<int>` epoch days" that "returned the oldest
+   segment as current". **The actual `loadInsights()` does not compute streaks at all** —
+   it reads `currentStreakDays` / `bestStreakDays` straight from SharedPreferences
+   (`settings_service.dart` ~line 811-812), and **no `computeStreaks` closure exists**
+   anywhere in the file (grep confirmed; only the private `_epochDay` method existed, and
+   it was not inside `loadInsights()`). I located by symbol name as instructed, found only
+   `_epochDay`, and implemented the brief's exact code verbatim. Because of this, my edits
+   produce **NO change to `loadInsights()`'s streak values** — the corrected `current`
+   semantics only apply to the new pure `computeStreaks`, which Task 4 will consume.
+   The brief was not ambiguous or wrong in its *steps*; only its *context* was stale. I
+   judged this as safe to proceed rather than needing NEEDS_CONTEXT, since every concrete
+   instruction (test code, helper code, delegation) was exact and self-contained.
+
+2. `loadInsights()` will eventually need to source streaks from `computeStreaks` for the
+   corrected semantics to take effect app-wide — that appears to be Task 4's job
+   (`mergeRemoteInsights` consuming `computeStreaks`). No action taken here.
+
+Report file: C:\Users\hp\my_app\.superpowers\sdd\task-3-report.md

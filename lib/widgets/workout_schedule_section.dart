@@ -22,12 +22,17 @@ class _WorkoutScheduleSectionState extends State<WorkoutScheduleSection> {
   }
 
   Future<void> _loadSchedule() async {
-    final loaded = await _settings.loadWorkoutSchedule();
-    if (!mounted) return;
-    setState(() {
-      _schedule = loaded;
-      _loading = false;
-    });
+    try {
+      final loaded = await _settings.loadWorkoutSchedule();
+      if (!mounted) return;
+      setState(() {
+        _schedule = loaded;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _toggleDay(int day) async {

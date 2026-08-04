@@ -1,66 +1,45 @@
-# Task 7 Report: Audio Performance Audit
+# Task 7 Report: Wire Firestore rules into deploy; parameterize admin authorization
 
-**Status: DONE_WITH_CONCERNS**
+**Status:** DONE_WITH_CONCERNS
 
-## Per-File Audit Results
+## What changed
 
-### 1. `lib/services/audio_engine.dart` ✅ CLEAN
+1. **`firebase.json`** — Replaced the single-line file with the intended replacement JSON: the current content plus a top-level `"firestore":{"rules":"firestore.rules"}` section, so `firebase deploy --only firestore:rules` pushes `firestore.rules`.
 
-- **AudioPlayers found**: None directly owned. Holds references to `GeminiVoiceService` and `SfxService` which manage their own players.
-- **Lifecycle**: Properly calls `_voice.dispose()` and `_sfx.dispose()` in `dispose()`. `stop()` clears queue, stops voice, stops TTS, unducks music.
-- **No duplicate players**: `_AudioQueue` processes tasks sequentially. No concurrent play conflicts.
-- **Memory leaks**: None. Queue cleared and services disposed.
-- **Dead code**: `_voiceVolume` confirmed removed (not present anywhere via grep).
-- **Issues**: None.
+2. **`firestore.rules`** — Replaced ONLY the community-workout delete rule (lines 24-26). Changed `request.auth.token.email == 'kingslayer.et@gmail.com'` to `request.auth.token.admin == true`. All surrounding rules and comments untouched.
 
-### 2. `lib/services/gemini_voice_service.dart` ⚠️ FIXED
+## JSON validation
 
-- **AudioPlayers found**:
-  - `_player` (line 13): Created in `initialize()`, disposed in `dispose()`. ✅
-  - `_clipPlayers` (line 18): Map of preloaded AudioPlayers. Created in `preloadClips()`, disposed in `preloadClips()` (at start), `disposePreloadedClips()`, and `dispose()`. ✅
-- **No duplicate players**: `preloadClips()` disposes all existing players before creating new ones. ✅
-- **Memory leaks**: **FIXED** — In `preloadClips()`, if `AudioPlayer()` succeeds but `setFilePath()` throws, the player was created but never added to `_clipPlayers` and never disposed (native platform resources leaked). Added disposal in the catch block.
-- **Dead code**: None.
-- **Issues**: Memory leak fixed.
+Command (run from `C:\Users\hp\my_app`):
 
-### 3. `lib/services/sfx_service.dart` ✅ CLEAN
+```
+node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); console.log('valid json')"
+```
 
-- **AudioPlayers found**: `_player` (line 9): Single player created in `initialize()`, disposed in `dispose()`. ✅
-- **No duplicate players**: Single shared player for all sound effects. ✅
-- **Memory leaks**: None. Player properly disposed.
-- **Dead code**: None.
-- **Issues**: None. Clean implementation.
+Output:
 
-### 4. `lib/services/music_service.dart` ✅ CLEAN
+```
+valid json
+```
 
-- **AudioPlayers found**: `_player` (line 12): Created in constructor, disposed in `dispose()`. ✅
-- **No duplicate players**: Single player. ✅
-- **Memory leaks**: None.
-- **Dead code**: None.
-- **Issues**: None.
+Additional structural check: `JSON.parse` of the committed content yields top-level keys `flutter, firestore` with `firestore.rules === "firestore.rules"` (9 `{` / 9 `}`).
 
-### 5. `lib/pages/workout_timer_page.dart` ⚠️ CONCERN
+## Commit
 
-- **AudioEngine lifecycle**: Created in `initState()` (line 112), disposed in `dispose()` (line 138). ✅
-- **MusicService lifecycle**: Created in `initState()` (line 110), disposed in `dispose()` (line 139). ✅
-- **Memory leaks**: None. All controllers, timers, video controllers, and audio services properly disposed.
-- **Orphaned timers**: `_settingsPersistDebounce` properly cancelled in `dispose()`. ✅
-- **Dead code**: **`_voiceCueVolume`** (line 87) is tracked in state, persisted to `AppSettings`, and displayed in the `_ConfigPanel` voice volume slider (line 2244), but the value is **never applied to any audio service**. The slider has no effect on playback volume. This is orphaned state/dead UI.
-- **Issues**: Voice volume slider is non-functional dead code. Recommend either wiring it to the audio engine or removing the UI control.
+- SHA: `6e5006cd18a091b561ee38e7440748554a89c33a` (short: `6e5006c`)
+- Subject: `chore: wire firestore rules into deploy and use admin custom claim`
+- Files: only `firebase.json` and `firestore.rules` (verified via `git show --stat`). No `git add -A` / `git add .` used.
 
-### 6. `lib/pages/workout_builder_player_page.dart` ✅ CLEAN
+## Concern (why DONE_WITH_CONCERNS)
 
-- **AudioEngine lifecycle**: Created in `initState()` (line 65), disposed in `dispose()` (line 121). ✅
-- **Memory leaks**: None. `_ticker` cancelled, audio engine disposed.
-- **Dead code**: None.
-- **Issues**: None.
+The task brief's Step 1 verbatim JSON string (`.superpowers/sdd/task-7-brief.md`, line 15) is **invalid JSON**: it has 9 opening braces and only 8 closing braces (verified programmatically). Committing it byte-for-byte would break `firebase.json` and make the whole `firebase deploy` configuration unparseable — contradicting Step 3, which requires the validation command to output `valid json`.
 
-## Fixes Applied
+I fixed the brief's typo minimally: inserted exactly one `}` immediately before `,"firestore"` so `firestore` is a top-level key (sibling of `flutter`), matching the brief's stated intent ("the current file's content plus `"firestore":{"rules":"firestore.rules"}` at the end"). This is the only byte difference from the brief's string (582 vs 583 bytes, single added `}`). If the brief's verbatim string was intentional, the correct string is NOT what the brief contains and would need to be reconciled.
 
-1. **`lib/services/gemini_voice_service.dart`** — Fixed AudioPlayer leak in `preloadClips()` where a player could be created but never disposed if `setFilePath()` threw an exception. Added proper disposal in the catch block.
+## Step 5: Manual checklist (documented for the user; NOT run)
 
-## Dead Code Verification
+1. Set the admin claim once: `firebase` Admin SDK `setCustomUserClaims('<admin-uid>', {admin: true})`.
+2. Deploy: `firebase deploy --only firestore:rules`.
+3. Verify a community-workout delete still works for the admin and still fails for non-admins.
 
-- ✅ `_voiceVolume` confirmed removed from `AudioEngine` (grep found zero matches).
-- ✅ Voice volume slider confirmed removed from `AudioSettingsPage`.
-- ⚠️ Voice volume slider still exists in `workout_timer_page.dart` `_ConfigPanel` but value is never applied (orphaned UI).
+Note: `firebase deploy` and Admin SDK commands were intentionally NOT run in this task, per task instructions.

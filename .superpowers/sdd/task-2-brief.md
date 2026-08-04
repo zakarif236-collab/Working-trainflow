@@ -1,178 +1,163 @@
-### Task 2: `EarnPointsCard` widget
+﻿### Task 2: Decouple first frame from auth resolution on cold start
 
 **Files:**
-- Create: `lib/widgets/earn_points_card.dart`
-- Test: `test/earn_points_card_test.dart`
+- Modify: `lib/main.dart` (`main` ~32-136)
 
 **Interfaces:**
-- Consumes: nothing from Task 1 (pure presentational widget).
-- Produces: `EarnPointsCard` — `const EarnPointsCard({super.key, required int buildPoints, required int todayWatches, required int maxDailyWatches, required VoidCallback? onWatchAd})`. Renders the card styling used across the builder page (white 0.06 alpha fill, radius 16, white24 border): an "Earn Points" title, the balance line ("3 build points"), the daily progress ("2/5 today"), a full-width "Watch Ad (+1)" `FilledButton.icon` that is disabled when `onWatchAd` is null, and the helper copy. Consumed by Task 3.
-  - Note: this deviates from the spec's `_EarnPointsCard` (private-in-page) naming by making it a public widget in its own file, so it is testable in isolation. The page wires it with the same content the spec describes.
-- No comments in code.
+- Consumes: existing `AuthService`, `ConnectivityService`, `SettingsService.migrateUserData`, `NotificationService.instance.load`, `PushNotificationService.instance.initialize`, `WorkoutForegroundService.cancelStaleNotifications`, `MobileAds.instance.initialize`, `DeepLinkService.instance.init`, `_firebaseMessagingBackgroundHandler`.
+- Produces: `Future<void> _finalizeStartup(AuthService authService)` top-level function in `lib/main.dart`. No other file depends on it.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Rewrite `main` and add `_finalizeStartup`**
 
-Create `test/earn_points_card_test.dart`:
+Replace the entire `main()` body (lines 32-136, from `Future<void> main() async {` through the closing brace at line 136) with:
 
 ```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:my_app/widgets/earn_points_card.dart';
-
-void main() {
-  testWidgets('shows balance, daily progress, and helper copy', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: EarnPointsCard(
-            buildPoints: 3,
-            todayWatches: 2,
-            maxDailyWatches: 5,
-            onWatchAd: null,
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Earn Points'), findsOneWidget);
-    expect(find.text('3 build points'), findsOneWidget);
-    expect(find.text('2/5 today'), findsOneWidget);
-    expect(find.text('Watch Ad (+1)'), findsOneWidget);
-    expect(
-      find.text('Watch ads to earn build points, used when you save a new workout.'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('watch button is disabled when the daily cap is reached',
-      (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: EarnPointsCard(
-            buildPoints: 5,
-            todayWatches: 5,
-            maxDailyWatches: 5,
-            onWatchAd: null,
-          ),
-        ),
-      ),
-    );
-
-    final button = tester.widget<FilledButton>(
-      find.ancestor(
-        of: find.text('Watch Ad (+1)'),
-        matching: find.byType(FilledButton),
-      ),
-    );
-    expect(button.onPressed, isNull);
-  });
-
-  testWidgets('tapping Watch Ad invokes the callback', (tester) async {
-    var tapped = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: EarnPointsCard(
-            buildPoints: 1,
-            todayWatches: 0,
-            maxDailyWatches: 5,
-            onWatchAd: () => tapped = true,
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Watch Ad (+1)'));
-    expect(tapped, isTrue);
-  });
-}
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `flutter test test/earn_points_card_test.dart`
-Expected: FAIL — "Target of URI doesn't exist: 'package:my_app/widgets/earn_points_card.dart'".
-
-- [ ] **Step 3: Write minimal implementation**
-
-Create `lib/widgets/earn_points_card.dart`:
-
-```dart
-import 'package:flutter/material.dart';
-
-class EarnPointsCard extends StatelessWidget {
-  const EarnPointsCard({
-    super.key,
-    required this.buildPoints,
-    required this.todayWatches,
-    required this.maxDailyWatches,
-    required this.onWatchAd,
-  });
-
-  final int buildPoints;
-  final int todayWatches;
-  final int maxDailyWatches;
-  final VoidCallback? onWatchAd;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Earn Points',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            buildPoints == 1 ? '1 build point' : '$buildPoints build points',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '$todayWatches/$maxDailyWatches today',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onWatchAd,
-              icon: const Icon(Icons.play_circle_outline),
-              label: const Text('Watch Ad (+1)'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Watch ads to earn build points, used when you save a new workout.',
-            style: TextStyle(color: Colors.white70),
-          ),
-        ],
-      ),
-    );
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // âœ… Enable Firestore offline persistence so cached reads resolve without a network.
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      FirebaseFirestore.instance.settings =
+          const Settings(persistenceEnabled: true);
+    } catch (_) {}
   }
+
+  try {
+    await WorkoutForegroundService.cancelStaleNotifications();
+  } catch (_) {}
+
+  final authService = AuthService();
+  try {
+    await authService.init();
+  } catch (_) {
+    debugPrint('AuthService.init failed â€” proceeding with default state');
+  }
+
+  try {
+    await ConnectivityService.instance.initialize();
+  } catch (e) {
+    debugPrint('[main] Connectivity init failed: $e');
+  }
+
+  // Render the first frame from cached local data immediately. Everything that
+  // touches the network or waits on FirebaseAuth runs deferred in
+  // _finalizeStartup so an offline cold start never shows a blank window.
+  runApp(MyApp(authService: authService));
+  unawaited(_finalizeStartup(authService));
+
+  AppLifecycleListener(
+    onResume: () => SettingsService().syncWorkoutProgressToFirestore(),
+  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    DeepLinkService.instance.init(navigatorKey);
+  });
+}
+
+/// Deferred startup work that must not block the first frame: session restore
+/// wait (anti-clobber), conditional anonymous sign-in, AdMob, push
+/// notifications, key migration, and background sync.
+Future<void> _finalizeStartup(AuthService authService) async {
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      await MobileAds.instance.initialize();
+    } catch (e) {
+      debugPrint('[main] AdMob init failed: $e');
+    }
+  }
+
+  if (!authService.hasFirebaseSession) {
+    // Cold start: FirebaseAuth may still be restoring a cached session, so a
+    // null currentUser here does not mean this device has no account. Give any
+    // persisted session a chance to restore before creating a fresh anonymous
+    // user â€” otherwise the restore can race and clobber the real account.
+    if (authService.hasCachedSession) {
+      try {
+        await authService.waitForRestoredSession();
+      } catch (_) {
+        debugPrint('[main] Failed waiting for session restore');
+      }
+    }
+
+    if (!authService.hasFirebaseSession) {
+      if (ConnectivityService.instance.isOnline) {
+        try {
+          await authService
+              .signInAnonymously()
+              .timeout(const Duration(seconds: 8));
+        } catch (_) {
+          debugPrint('[main] Firebase Auth unavailable, using local UID fallback');
+        }
+      } else {
+        debugPrint('[main] Offline â€” skipping anonymous sign-in, using local UID fallback');
+      }
+    }
+  }
+
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Identity is settled â€” move legacy per-user prefs into the account
+  // namespace so local stats don't mix across accounts on this device.
+  try {
+    await SettingsService.migrateUserData();
+  } catch (_) {
+    debugPrint('[main] User-data key migration skipped');
+  }
+
+  try {
+    await NotificationService.instance.load();
+  } catch (_) {
+    debugPrint('[main] NotificationService.load failed');
+  }
+  try {
+    await PushNotificationService.instance.initialize().timeout(const Duration(seconds: 5));
+  } catch (_) {
+    debugPrint('[main] PushNotification init skipped (offline or timeout)');
+  }
+
+  // Best-effort background sync; never block anything on the network.
+  unawaited(SettingsService().syncWorkoutProgressToFirestore());
+
+  assert(() {
+    if (GeminiConfig.isConfigured) {
+      debugPrint('Gemini voice-over key is configured.');
+    } else {
+      debugPrint('Gemini voice-over key is missing.');
+    }
+    return true;
+  }());
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+Keep the `_firebaseMessagingBackgroundHandler` function (lines 27-30), the `MyApp` class, and all imports unchanged. The `dart:async` import already provides `unawaited`.
 
-Run: `flutter test test/earn_points_card_test.dart`
-Expected: PASS (3 tests).
+- [ ] **Step 2: Analyze**
 
-- [ ] **Step 5: Commit**
+Run: `flutter analyze`
+Expected: no new issues in `lib/main.dart`.
+
+- [ ] **Step 3: Run existing tests**
+
+Run: `flutter test`
+Expected: all existing tests pass (tests pump `MyApp` directly and never call `main()`, so the restructure does not affect them).
+
+- [ ] **Step 4: Build debug APK**
+
+Run: `flutter build apk --debug`
+Expected: `âˆš Built build\app\outputs\flutter-apk\app-debug.apk`
+
+- [ ] **Step 5: Manual verification checklist**
+
+On a device/emulator:
+1. Airplane mode ON. Sign in (Google). Kill the app. Reopen â†’ the app renders immediately (no black screen) and shows cached local data.
+2. Re-enable network â†’ confirm the same account is still signed in (no fresh anonymous user, profile/stats intact).
+3. Online cold start with a signed-in session â†’ app renders, session restored in background without clobbering.
+4. Fresh device online (no session) â†’ UI visible, anonymous sign-in completes in background.
+5. Verify deep links still navigate after launch (post-frame `DeepLinkService.init` unchanged).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add lib/widgets/earn_points_card.dart test/earn_points_card_test.dart
-git commit -m "feat: add earn points card widget"
+git add lib/main.dart
+git commit -m "fix: render first frame before auth resolution to fix offline cold start"
 ```
-
----
-
