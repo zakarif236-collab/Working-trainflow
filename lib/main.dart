@@ -39,14 +39,6 @@ Future<void> main() async {
           const Settings(persistenceEnabled: true);
     } catch (_) {}
   }
-  // ✅ Initialize AdMob only on Android/iOS
-  if (Platform.isAndroid || Platform.isIOS) {
-    try {
-      await MobileAds.instance.initialize();
-    } catch (e) {
-      debugPrint('[main] AdMob init failed: $e');
-    }
-  }
 
   try {
     await WorkoutForegroundService.cancelStaleNotifications();
@@ -63,6 +55,32 @@ Future<void> main() async {
     await ConnectivityService.instance.initialize();
   } catch (e) {
     debugPrint('[main] Connectivity init failed: $e');
+  }
+
+  // Render the first frame from cached local data immediately. Everything that
+  // touches the network or waits on FirebaseAuth runs deferred in
+  // _finalizeStartup so an offline cold start never shows a blank window.
+  runApp(MyApp(authService: authService));
+  unawaited(_finalizeStartup(authService));
+
+  AppLifecycleListener(
+    onResume: () => SettingsService().syncWorkoutProgressToFirestore(),
+  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    DeepLinkService.instance.init(navigatorKey);
+  });
+}
+
+/// Deferred startup work that must not block the first frame: session restore
+/// wait (anti-clobber), conditional anonymous sign-in, AdMob, push
+/// notifications, key migration, and background sync.
+Future<void> _finalizeStartup(AuthService authService) async {
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      await MobileAds.instance.initialize();
+    } catch (e) {
+      debugPrint('[main] AdMob init failed: $e');
+    }
   }
 
   if (!authService.hasFirebaseSession) {
@@ -114,7 +132,7 @@ Future<void> main() async {
     debugPrint('[main] PushNotification init skipped (offline or timeout)');
   }
 
-  // Best-effort background sync; never block app startup on the network.
+  // Best-effort background sync; never block anything on the network.
   unawaited(SettingsService().syncWorkoutProgressToFirestore());
 
   assert(() {
@@ -125,14 +143,6 @@ Future<void> main() async {
     }
     return true;
   }());
-
-  runApp(MyApp(authService: authService));
-  AppLifecycleListener(
-    onResume: () => SettingsService().syncWorkoutProgressToFirestore(),
-  );
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    DeepLinkService.instance.init(navigatorKey);
-  });
 }
 
 class MyApp extends StatelessWidget {
