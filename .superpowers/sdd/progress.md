@@ -137,6 +137,14 @@
 - Minor (no action): deep-link init now races identity settling (low risk — resolvedUserId stable from AuthService.init); AppLifecycleListener registered before _finalizeStartup completes (duplicate idempotent sync, harmless); first frame can render before NotificationService.load() (cosmetic badge flash); per-task roll-ups all no-ops.
 - Manual device checklists (Task 1 items 2/4/5, Task 2 items 1/2/4) NOT yet run — REQUIRED before release. Also recommended: kill-from-recents stale-889 check.
 
+## Completion (2026-08-04)
+- USER: "Merge back to master locally". Handled uncommitted WIP first (USER: "Commit all + discard gradle junk") → commit f09aa36 (chore: commit pre-merge WIP: firebase options appId, schedule load hardening, SDD ledger + plan docs).
+- Merge: fast-forward aefd461 → f09aa36 on master; branch feat/hybrid-signin-offline deleted.
+- Merged-result verification: flutter test 37 pass / 3 pre-existing widget_test timer-pending failures (baseline, no regressions).
+- NOTE for USER: f09aa36 carried `lib/firebase_options.dart` appId `3bfacc3d4296109065577f` (com.TrainFlow.myapp client) while applicationId is com.trainflow22.app — inconsistent; verify before release.
+- OPEN follow-up (recommended by final review, NOT done): `cancelStaleNotifications()` should also cancel `_actionNotificationId` (889) — kill-from-recents stale companion notification.
+- Pending: manual device checklists before release.
+
 ## Notes
 - Worktree at dispatch: uncommitted `lib/firebase_options.dart` (appId → com.TrainFlow.myapp client) and `lib/widgets/workout_schedule_section.dart` (try/catch hardening) exist; OUTSIDE plan scope — implementers stage only their scoped file per plan commit steps.
 - Subagents dispatched without explicit model (OpenCode task tool has no model param — session default used for all roles).
