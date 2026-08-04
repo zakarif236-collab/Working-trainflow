@@ -31,6 +31,11 @@ class WorkoutForegroundService {
   bool _isRunning = false;
   bool get isRunning => _isRunning;
 
+  /// True only while the companion notification is visible (i.e. the app is
+  /// backgrounded/locked). Guards `_showActionNotification` in [update] so no
+  /// notification is posted while the user is inside the app.
+  bool _isForegrounded = false;
+
   bool _actionForwarderAttached = false;
 
   // Current workout state for notification
@@ -71,6 +76,7 @@ class WorkoutForegroundService {
     _totalSets = totalSets;
     _isPaused = false;
     _isMusicPlaying = isMusicPlaying;
+    _isForegrounded = false;
     _lastActionContent = '';
 
     await _initLocalNotifications();
@@ -113,6 +119,7 @@ class WorkoutForegroundService {
   /// Promote to foreground — shows the notification (call when app goes to background).
   Future<void> promoteToForeground() async {
     if (!_isRunning) return;
+    _isForegrounded = true;
     _updateForegroundNotificationInfo();
     _service.invoke('setAsForeground');
     if (Platform.isAndroid) {
@@ -124,6 +131,7 @@ class WorkoutForegroundService {
   /// Demote to background — hides the notification (call when app returns to foreground).
   Future<void> demoteToBackground() async {
     if (!_isRunning) return;
+    _isForegrounded = false;
     _service.invoke('setAsBackground');
     if (Platform.isAndroid) {
       await _localNotifications.cancel(_actionNotificationId);
@@ -136,6 +144,7 @@ class WorkoutForegroundService {
 
     _service.invoke('stop');
     _isRunning = false;
+    _isForegrounded = false;
 
     if (Platform.isAndroid) {
       await _localNotifications.cancel(_actionNotificationId);
@@ -161,7 +170,7 @@ class WorkoutForegroundService {
 
     if (_isRunning) {
       _updateForegroundNotificationInfo();
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid && _isForegrounded) {
         await _showActionNotification();
       }
     }
