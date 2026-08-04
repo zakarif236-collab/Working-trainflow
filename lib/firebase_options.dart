@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyABvP-n48rybcruAUCQaJzgmH1PzQN6CYM',
-    appId: '1:832592716654:android:3bfacc3d4296109065577f',
+    appId: '1:832592716654:android:11ec55736f9e676665577f',
     messagingSenderId: '832592716654',
     projectId: 'video-helper-21817',
     storageBucket: 'video-helper-21817.firebasestorage.app',
