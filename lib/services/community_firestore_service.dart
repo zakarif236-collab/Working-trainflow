@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:my_app/models/sync_action.dart';
 import 'package:my_app/models/workout_models.dart';
+import 'package:my_app/services/auth_service.dart';
 import 'package:my_app/services/sync_queue.dart';
 
 class CommunityFirestoreService {
@@ -33,7 +34,10 @@ class CommunityFirestoreService {
     final workout = CommunityWorkout(
       id: docRef.id,
       creatorId: _uid!,
-      creatorUsername: user?.displayName ?? 'Anonymous',
+      creatorUsername: resolveDisplayName(
+        displayName: user?.displayName,
+        email: user?.email,
+      ),
       creatorAvatarPath: user?.photoURL ?? '',
       title: input.title,
       description: input.description,
@@ -284,16 +288,19 @@ class CommunityFirestoreService {
     if (_uid == null) return;
     try {
       final user = _auth.currentUser;
-      final commentRef = _workouts.doc(workoutId).collection('comments').doc();
-
       final comment = CommunityComment(
-        id: commentRef.id,
-        authorUsername: user?.displayName ?? 'Anonymous',
+        id: 'c_${DateTime.now().microsecondsSinceEpoch}',
+        authorUsername: resolveDisplayName(
+          displayName: user?.displayName,
+          email: user?.email,
+        ),
         message: message,
         createdAt: DateTime.now(),
       );
 
-      await commentRef.set(comment.toJson());
+      await _workouts.doc(workoutId).update({
+        'comments': FieldValue.arrayUnion([comment.toJson()]),
+      });
     } catch (_) {
       await SyncQueue.instance.enqueue(SyncAction(
         type: 'add_comment',

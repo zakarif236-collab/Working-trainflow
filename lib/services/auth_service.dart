@@ -237,6 +237,14 @@ class AuthService {
   }
 }
 
+String resolveDisplayName({String? displayName, String? email}) {
+  final name = displayName?.trim();
+  if (name != null && name.isNotEmpty) return name;
+  final localPart = email?.split('@').first.trim();
+  if (localPart != null && localPart.isNotEmpty) return localPart;
+  return 'Athlete';
+}
+
 class AuthServiceException implements Exception {
   const AuthServiceException(this.message);
   final String message;

@@ -199,7 +199,7 @@ class _CommunityPageState extends State<CommunityPage>
     final link = 'fitpulse://workout/${workout.id}';
     final shareText = 'Try "${workout.title}" by @${workout.creatorUsername}! $link';
     await Clipboard.setData(ClipboardData(text: shareText));
-    await Share.share(shareText);
+    await SharePlus.instance.share(ShareParams(text: shareText));
     if (!mounted) return;
     setState(() {
       _workouts = _workouts.map((w) {
@@ -335,7 +335,10 @@ class _CommunityPageState extends State<CommunityPage>
     if (!mounted) return;
     final newComment = CommunityComment(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      authorUsername: _authService.currentUserId,
+      authorUsername: resolveDisplayName(
+        displayName: _authService.currentDisplayName,
+        email: _authService.currentEmail,
+      ),
       message: text.trim(),
       createdAt: DateTime.now(),
     );
