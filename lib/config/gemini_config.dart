@@ -1,9 +1,7 @@
 class GeminiConfig {
   GeminiConfig._();
 
-  // Centralized Gemini API key for voice-over integrations.
-  static const String apiKey =
-      '';
+  static const String apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   static bool get isConfigured => apiKey.trim().isNotEmpty;
 }
