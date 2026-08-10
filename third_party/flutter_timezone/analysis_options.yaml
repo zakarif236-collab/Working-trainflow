@@ -1,0 +1,5 @@
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    avoid_classes_with_only_static_members: false # For backward compatibility

@@ -579,7 +579,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
 
     final link = 'fitpulse://workout/$firestoreId';
     await Clipboard.setData(ClipboardData(text: link));
-    await Share.share('Try my workout "${routine.name}"! $link');
+    await SharePlus.instance.share(ShareParams(text: 'Try my workout "${routine.name}"! $link'));
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
