@@ -579,37 +579,38 @@ class SettingsService {
     return next;
   }
 
-  Future<List<CommunityWorkout>> saveCommunityWorkoutToMyWorkouts(String workoutId) async {
-    final workouts = await loadCommunityWorkouts();
-    CommunityWorkout? target;
-    for (final entry in workouts) {
-      if (entry.id == workoutId) {
-        target = entry;
-        break;
-      }
-    }
-    if (target == null) {
-      return workouts;
-    }
-
+  Future<void> saveCommunityWorkoutToMyWorkouts(CommunityWorkout workout) async {
     final routine = WorkoutBuilderRoutine(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      name: target.title,
+      id: workout.id,
+      name: workout.title,
       createdAt: DateTime.now(),
-      exercises: target.exercises,
+      exercises: workout.exercises,
     );
     await saveWorkoutBuilderRoutine(routine);
 
-    final next = workouts
-        .map((entry) {
-          if (entry.id != workoutId) {
-            return entry;
-          }
-          return entry.copyWith(isSaved: true, downloads: entry.downloads + 1);
-        })
-        .toList(growable: false);
-    await saveCommunityWorkouts(next);
-    return next;
+    final workouts = await loadCommunityWorkouts();
+    final index = workouts.indexWhere((entry) => entry.id == workout.id);
+    if (index < 0) {
+      return;
+    }
+    final entry = workouts[index];
+    workouts[index] = entry.copyWith(
+      isSaved: true,
+      downloads: entry.isSaved ? entry.downloads : entry.downloads + 1,
+    );
+    await saveCommunityWorkouts(workouts);
+  }
+
+  Future<void> removeCommunityWorkoutFromMyWorkouts(String workoutId) async {
+    await deleteWorkoutBuilderRoutine(workoutId);
+
+    final workouts = await loadCommunityWorkouts();
+    final index = workouts.indexWhere((entry) => entry.id == workoutId);
+    if (index < 0) {
+      return;
+    }
+    workouts[index] = workouts[index].copyWith(isSaved: false);
+    await saveCommunityWorkouts(workouts);
   }
 
   Future<CreatorCommunityStats> loadCreatorCommunityStats(String creatorId) async {

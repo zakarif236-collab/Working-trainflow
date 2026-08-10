@@ -55,6 +55,7 @@ class WorkoutForegroundService {
     const initSettings = InitializationSettings(android: androidSettings);
     await plugin.initialize(initSettings);
     await plugin.cancel(_notificationId);
+    await plugin.cancel(_actionNotificationId);
   }
 
   /// Start the background service (keeps timer alive in background).

@@ -174,6 +174,11 @@ class _CommunityPageState extends State<CommunityPage>
         return w.copyWith(isSaved: willSave);
       }).toList();
     });
+    if (willSave) {
+      await _settingsService.saveCommunityWorkoutToMyWorkouts(workout);
+    } else {
+      await _settingsService.removeCommunityWorkoutFromMyWorkouts(workout.id);
+    }
     CommunityFirestoreService.instance.toggleSave(workout.id, !willSave);
 
     if (!mounted) return;
