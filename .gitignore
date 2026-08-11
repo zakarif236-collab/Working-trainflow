@@ -1,3 +1,6 @@
+# Superpowers isolated worktrees
+.worktrees/
+
 # Miscellaneous
 *.class
 *.log
