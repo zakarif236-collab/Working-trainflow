@@ -11,7 +11,10 @@ class HeaderBannerAd extends StatefulWidget {
 }
 
 class _HeaderBannerAdState extends State<HeaderBannerAd> {
+  static const int _maxAdLoadAttempts = 3;
+
   BannerAd? _bannerAd;
+  int _loadAttempts = 0;
 
   @override
   void initState() {
@@ -20,6 +23,10 @@ class _HeaderBannerAdState extends State<HeaderBannerAd> {
   }
 
   Future<void> _loadBannerAd() async {
+    await AdHelper.ensureInitialized();
+    if (!mounted || _loadAttempts >= _maxAdLoadAttempts) {
+      return;
+    }
     String adUnitId;
     try {
       adUnitId = AdHelper.bannerAdUnitId;
@@ -34,15 +41,24 @@ class _HeaderBannerAdState extends State<HeaderBannerAd> {
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) {
-          if (mounted) {
-            setState(() {
-              _bannerAd = ad;
-            });
+          if (!mounted) {
+            ad.dispose();
+            return;
           }
+          setState(() {
+            _bannerAd = ad;
+          });
         },
         onAdFailedToLoad: (failedAd, error) {
           debugPrint('Banner ad failed to load: ${error.code} - ${error.message}');
           failedAd.dispose();
+          _loadAttempts += 1;
+          if (_loadAttempts < _maxAdLoadAttempts) {
+            Future<void>.delayed(
+              Duration(seconds: 5 * _loadAttempts),
+              _loadBannerAd,
+            );
+          }
         },
       ),
     );

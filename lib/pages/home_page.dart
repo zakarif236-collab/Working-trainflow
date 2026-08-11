@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:my_app/add/ad_helper.dart';
@@ -16,10 +18,14 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const int _maxAdLoadAttempts = 3;
+
   final SettingsService _settingsService = SettingsService();
   WorkoutBuilderResumeSession? _resumeSession;
   BannerAd? _bannerAd;
   InterstitialAd? _interstitialAd;
+  int _bannerLoadAttempts = 0;
+  int _interstitialLoadAttempts = 0;
 
   @override
   void initState() {
@@ -29,7 +35,11 @@ class _HomePageState extends State<HomePage> {
     _loadInterstitialAd();
   }
 
-  void _loadInterstitialAd() {
+  Future<void> _loadInterstitialAd() async {
+    await AdHelper.ensureInitialized();
+    if (!mounted || _interstitialLoadAttempts >= _maxAdLoadAttempts) {
+      return;
+    }
     final String adUnitId;
     try {
       adUnitId = AdHelper.interstitialAdUnitId;
@@ -41,6 +51,7 @@ class _HomePageState extends State<HomePage> {
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
+          _interstitialLoadAttempts = 0;
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
@@ -57,6 +68,13 @@ class _HomePageState extends State<HomePage> {
         },
         onAdFailedToLoad: (error) {
           print('Failed to load ad: $error');
+          _interstitialLoadAttempts += 1;
+          if (_interstitialLoadAttempts < _maxAdLoadAttempts) {
+            Future<void>.delayed(
+              Duration(seconds: 5 * _interstitialLoadAttempts),
+              _loadInterstitialAd,
+            );
+          }
         },
       ),
     );
@@ -73,7 +91,11 @@ class _HomePageState extends State<HomePage> {
     ad.show();
   }
 
-  void _loadBannerAd() {
+  Future<void> _loadBannerAd() async {
+    await AdHelper.ensureInitialized();
+    if (!mounted || _bannerLoadAttempts >= _maxAdLoadAttempts) {
+      return;
+    }
     final String adUnitId;
     try {
       adUnitId = AdHelper.bannerAdUnitId;
@@ -86,6 +108,11 @@ class _HomePageState extends State<HomePage> {
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
+          _bannerLoadAttempts = 0;
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
           setState(() {
             _bannerAd = ad as BannerAd;
           });
@@ -93,6 +120,13 @@ class _HomePageState extends State<HomePage> {
         onAdFailedToLoad: (ad, error) {
           debugPrint('Home banner ad failed to load: ${error.code} - ${error.message}');
           ad.dispose();
+          _bannerLoadAttempts += 1;
+          if (_bannerLoadAttempts < _maxAdLoadAttempts) {
+            Future<void>.delayed(
+              Duration(seconds: 5 * _bannerLoadAttempts),
+              _loadBannerAd,
+            );
+          }
         },
       ),
     );

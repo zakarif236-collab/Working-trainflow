@@ -39,6 +39,8 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   int _todayAdWatches = 0;
   RewardedAd? _rewardedAd;
   VoidCallback? _pendingReward;
+  int _rewardedAdLoadAttempts = 0;
+  static const int _maxAdLoadAttempts = 3;
 
   bool get _isEditing => _editingRoutineId != null;
 
@@ -90,18 +92,40 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     });
   }
 
-  void _loadRewardedAd() {
+  Future<void> _loadRewardedAd() async {
+    await AdHelper.ensureInitialized();
+    if (!mounted || _rewardedAdLoadAttempts >= _maxAdLoadAttempts) {
+      return;
+    }
+    final String adUnitId;
+    try {
+      adUnitId = AdHelper.rewardedAdUnitId;
+    } catch (_) {
+      return;
+    }
     RewardedAd.load(
-      adUnitId: AdHelper.rewardedAdUnitId,
+      adUnitId: adUnitId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
+          _rewardedAdLoadAttempts = 0;
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
           setState(() {
             _rewardedAd = ad;
           });
         },
         onAdFailedToLoad: (error) {
           print('Failed to load rewarded ad: $error');
+          _rewardedAdLoadAttempts += 1;
+          if (_rewardedAdLoadAttempts < _maxAdLoadAttempts) {
+            Future<void>.delayed(
+              Duration(seconds: 5 * _rewardedAdLoadAttempts),
+              _loadRewardedAd,
+            );
+          }
         },
       ),
     );

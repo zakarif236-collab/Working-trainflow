@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:my_app/add/ad_helper.dart';
 import 'package:my_app/config/gemini_config.dart';
 import 'package:my_app/pages/community_page.dart';
 import 'package:my_app/pages/first_page.dart';
@@ -76,11 +76,7 @@ Future<void> main() async {
 /// notifications, key migration, and background sync.
 Future<void> _finalizeStartup(AuthService authService) async {
   if (Platform.isAndroid || Platform.isIOS) {
-    try {
-      await MobileAds.instance.initialize();
-    } catch (e) {
-      debugPrint('[main] AdMob init failed: $e');
-    }
+    await AdHelper.ensureInitialized();
   }
 
   if (!authService.hasFirebaseSession) {
