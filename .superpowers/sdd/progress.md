@@ -192,3 +192,22 @@
 - Environmental fixes (NOT code): fresh worktree was missing two git-ignored files copied from main repo — android/key.properties (release signing config; caused `null cannot be cast to kotlin.String` at build.gradle.kts:27) and android/app/google-services.json (Firebase; `processReleaseGoogleServices` failure). Future worktrees need both copied from the main checkout before a release build.
 - git status clean of unexpected source changes (only SDD bookkeeping + generated registrant/build junk).
 
+## Plan: docs/superpowers/plans/2026-08-15-admob-new-account-rewarded.md (BASE 7f4cfc6, worktree feat-admob-new-account-rewarded)
+
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | Swap production rewarded IDs | done | ed37918 | approved |
+| 2 | Verification | pending | - | - |
+
+## Task 1 review
+- Verdict: ✅ Spec compliant, Approved. Diff exactly scoped: 2 files, 2 hunks, 4+/4-; production rewarded ID `ca-app-pub-3222893031015336/4804623122` in both platform cases (ad_helper.dart:76-82); debug test IDs preserved (`.../5224354917`, `.../2178118514`); banner/interstitial/App ID/workout_builder_page untouched. Minor (no action): duplicate platform strings per brief-mandated pattern.
+
+## Task 2 verification (controller-run)
+- git diff origin/master..HEAD -- lib/add/ad_helper.dart: ONLY the two rewarded cases changed; banner/interstitial/debug cases identical to master.
+- Debug IDs intact: android `.../5224354917` 1 match, ios `.../2178118514` 1 match in lib/add/ad_helper.dart.
+- Old-account rewarded IDs (`6138624088986178`) fully removed: 0 matches across lib + test.
+- flutter test test/ad_helper_test.dart: 3/3 pass.
+- flutter build apk --release: SUCCESS (65.4MB app-release.apk).
+- git status clean of unexpected source changes (only SDD bookkeeping + generated registrant/build junk).
+
+

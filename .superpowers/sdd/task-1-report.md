@@ -1,75 +1,66 @@
-# Task 1 Report: Swap production interstitial IDs
+# Task 1 Report: Swap production rewarded IDs
+
+**Status:** DONE
+**Commit:** `ed37918` — feat(ads): use new production rewarded ad unit IDs
+**Date:** 2026-08-15
 
 ## What I implemented
 
-Updated `lib/add/ad_helper.dart` so the two interstitial cases of `AdHelper.adUnitIdFor` return the new production interstitial unit `ca-app-pub-3222893031015336/1741873338` (new AdMob account) when `production` is true, while keeping the Google test IDs when `production` is false.
-
-Replaced:
-```dart
-case (AdPlatform.android, AdType.interstitial):
-  // TODO(ads): add production interstitial IDs
-  return 'ca-app-pub-3940256099942544/1033173712';
-case (AdPlatform.ios, AdType.interstitial):
-  // TODO(ads): add production interstitial IDs
-  return 'ca-app-pub-3940256099942544/4411468910';
-```
-
-With:
-```dart
-case (AdPlatform.android, AdType.interstitial):
-  return production
-      ? 'ca-app-pub-3222893031015336/1741873338'
-      : 'ca-app-pub-3940256099942544/1033173712';
-case (AdPlatform.ios, AdType.interstitial):
-  return production
-      ? 'ca-app-pub-3222893031015336/1741873338'
-      : 'ca-app-pub-3940256099942544/4411468910';
-```
-
-Exact values taken verbatim from the task brief. No other ad IDs, the App ID, or the rewarded IDs were touched (rewarded still intentionally points at the old account `6138624088986178`).
+Replaced the two production rewarded ad unit IDs in `lib/add/ad_helper.dart` (the `(AdPlatform.android, AdType.rewarded)` and `(AdPlatform.ios, AdType.rewarded)` switch cases) so production returns `ca-app-pub-3222893031015336/4804623122` instead of the old account's `ca-app-pub-6138624088986178/2840036851` (Android) and `ca-app-pub-6138624088986178/7209425656` (iOS). Debug (`production: false`) behavior is unchanged — Google test IDs retained. No other cases (App ID, banner, interstitial) were touched, and `workout_builder_page.dart` was not modified.
 
 ## What I tested and test results
 
-- **Focused test** (`flutter test test/ad_helper_test.dart`): 3/3 PASS.
-- **Full suite** (`flutter test`): 55 pass, 3 fail. The 3 failures are in `test/widget_test.dart` (pending-timer assertion: "A Timer is still pending even after the widget tree was disposed", originating from `_FirstPageState._loadInsights` / `SettingsService.loadInsightsFromFirestore`). I verified these are **pre-existing and unrelated**: I stashed my two-file change, re-ran `test/widget_test.dart` on the clean tree, and got the identical 3 failures, then popped the stash.
-- **Analyzer** (`flutter analyze`): 17 issues found, all pre-existing in other files / `third_party`. **Zero** issues in `lib/add/ad_helper.dart` or `test/ad_helper_test.dart`.
+- `flutter test test/ad_helper_test.dart` → all 3 tests pass (`00:00 +3: All tests passed!`).
+- `flutter analyze` → no issues reported in `lib/add/ad_helper.dart` or `test/ad_helper_test.dart`. (17 pre-existing issues remain elsewhere: `third_party/flutter_tts` errors and `avoid_print`/type-name lints in unrelated files.)
 
 ## TDD Evidence
 
-**RED** — after updating only the test (Step 1), `flutter test test/ad_helper_test.dart` failed as expected:
+### RED — before implementation
+
+Updated `test/ad_helper_test.dart` expectations first (both production rewarded expectations now assert `ca-app-pub-3222893031015336/4804623122`), then ran:
 
 ```
 00:00 +1 -1: AdHelper.adUnitIdFor uses production IDs when production is true [E]
-  Expected: 'ca-app-pub-3222893031015336/1741873338'
-    Actual: 'ca-app-pub-3940256099942544/1033173712'
+  Expected: 'ca-app-pub-3222893031015336/4804623122'
+    Actual: 'ca-app-pub-6138624088986178/2840036851'
      Which: is different.
-            Expected: ... -app-pub-32228930310 ...
-              Actual: ... -app-pub-39402560999 ...
+            Expected: ... a-app-pub-3222893031 ...
+              Actual: ... a-app-pub-6138624088 ...
                                     ^
-             Differ at offset 12
+             Differ at offset 11
+
+00:00 +2 -1: Some tests failed.
+Failing tests:
+  ... ad_helper_test.dart: AdHelper.adUnitIdFor uses production IDs when production is true
 ```
 
-Why expected: the production code still returned the old Google test ID for interstitial while the test now asserts the new production unit — exactly the failure the brief predicted (Android case; iOS would fail identically once past the first assert).
+Why expected: production code still returned the old account's rewarded unit for Android; the new expectation was added before implementation per TDD, so the test correctly failed on the first (Android) rewarded assertion.
 
-**GREEN** — after implementing the `ad_helper.dart` change, same command passed:
+### GREEN — after implementation
+
+Updated the two rewarded cases in `ad_helper.dart`, then ran:
 
 ```
+00:00 +1: AdHelper.adUnitIdFor uses Google test IDs when production is false
+00:00 +2: AdHelper.adUnitIdFor uses production IDs when production is true
+00:00 +3: AdHelper.adUnitIdFor public getters throw UnsupportedError on unsupported platforms
 00:00 +3: All tests passed!
 ```
 
 ## Files changed
 
-- `lib/add/ad_helper.dart` (interstitial cases only, lines 69-76)
-- `test/ad_helper_test.dart` (production interstitial expectations, lines 48-57)
+- `lib/add/ad_helper.dart` — 2 production rewarded ternaries updated to `ca-app-pub-3222893031015336/4804623122` (Android + iOS); debug test IDs unchanged.
+- `test/ad_helper_test.dart` — 2 production rewarded expectations updated to `ca-app-pub-3222893031015336/4804623122`.
 
 ## Self-review findings
 
-- Only the two `TODO(ads)` interstitial cases changed; banner and rewarded cases byte-identical to before. ✓
-- Debug (`production: false`) interstitial IDs unchanged — Google test IDs preserved. ✓
-- Values match the brief exactly: `ca-app-pub-3222893031015336/1741873338`. ✓
-- No App ID or other ad-unit changes in the diff. ✓
-- Commit contains only the 2 intended files (other working-tree modifications — `.superpowers/sdd/*`, generated plugin registrant files — were pre-existing and left alone). ✓
+- Diff is minimal: only the two rewarded cases and the two corresponding test expectations changed; verified `git show HEAD` lists exactly `lib/add/ad_helper.dart` and `test/ad_helper_test.dart`.
+- No remaining references to the old publisher prefix `6138624088986178` anywhere in `*.dart` files (grep confirmed).
+- Banner/interstitial production IDs and the App ID were not touched.
+- `workout_builder_page.dart` consumes `AdHelper.rewardedAdUnitId` unchanged via `_loadRewardedAd` (not in the diff).
+- The `switch` is exhaustive and returns `String` in all cases, so no analyzer complaints.
+- Working tree still shows unrelated modifications (SDD bookkeeping, generated plugin registrant files from running `flutter`); these were intentionally not committed as they are outside this task's scope.
 
-## Issues or concerns
+## Issues / concerns
 
-- None with the task itself. The 3 `widget_test.dart` failures are pre-existing flaky/pending-timer failures (Firestore insights) unrelated to this change; flagged for awareness but out of scope for Task 1.
+None. Note for downstream verification (Task 2): the old publisher prefix `6138624088986178` now appears nowhere in Dart source, which is a good cross-check.
