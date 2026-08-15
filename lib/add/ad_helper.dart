@@ -67,11 +67,13 @@ class AdHelper {
             ? 'ca-app-pub-3222893031015336/8843106337'
             : 'ca-app-pub-3940256099942544/2934735716';
       case (AdPlatform.android, AdType.interstitial):
-        // TODO(ads): add production interstitial IDs
-        return 'ca-app-pub-3940256099942544/1033173712';
+        return production
+            ? 'ca-app-pub-3222893031015336/1741873338'
+            : 'ca-app-pub-3940256099942544/1033173712';
       case (AdPlatform.ios, AdType.interstitial):
-        // TODO(ads): add production interstitial IDs
-        return 'ca-app-pub-3940256099942544/4411468910';
+        return production
+            ? 'ca-app-pub-3222893031015336/1741873338'
+            : 'ca-app-pub-3940256099942544/4411468910';
       case (AdPlatform.android, AdType.rewarded):
         return production
             ? 'ca-app-pub-6138624088986178/2840036851'

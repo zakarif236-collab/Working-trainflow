@@ -48,12 +48,12 @@ void main() {
       expect(
         AdHelper.adUnitIdFor(AdPlatform.android, AdType.interstitial,
             production: true),
-        'ca-app-pub-3940256099942544/1033173712',
+        'ca-app-pub-3222893031015336/1741873338',
       );
       expect(
         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.interstitial,
             production: true),
-        'ca-app-pub-3940256099942544/4411468910',
+        'ca-app-pub-3222893031015336/1741873338',
       );
       expect(
         AdHelper.adUnitIdFor(AdPlatform.android, AdType.rewarded,

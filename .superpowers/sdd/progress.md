@@ -172,3 +172,23 @@
 - Cross-cutting verified: App ID publisher prefix 3222893031015336 matches new banner unit prefix; old App ID + old banner IDs fully gone from code/config; interstitial TODOs untouched.
 - Controller reran flutter test test/ad_helper_test.dart 3/3 via reviewer. Full suite 48/3 baseline + analyze 17 pre-existing confirmed by controller.
 ## Completion
+
+## Plan: docs/superpowers/plans/2026-08-15-admob-new-account-interstitial.md (BASE c2407f4, worktree feat-admob-new-account-interstitial)
+
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | Swap production interstitial IDs | done | 09c152b | approved |
+| 2 | Verification | done | - | approved |
+
+## Task 1 review
+- Verdict: ✅ Spec compliant, Approved. Diff exactly scoped: 2 files, 2 hunks each; production interstitial ID `ca-app-pub-3222893031015336/1741873338` in both platform cases (ad_helper.dart:71,75); debug test IDs preserved (ad_helper.dart:72,76, test:19,24); rewarded/banner untouched; no manifest/Info.plist changes. Minor (no action): production ID duplicated across cases per brief-mandated banner pattern.
+- Cross-check: `AdHelper.interstitialAdUnitId` consumed only at home_page.dart:45; no other interstitial-ID source.
+
+## Task 2 verification (controller-run)
+- git diff origin/master..HEAD -- lib/add/ad_helper.dart: ONLY the two interstitial cases changed; banner and rewarded cases identical to master.
+- Debug IDs intact: android `.../1033173712` 1 match, ios `.../4411468910` 1 match in lib/add/ad_helper.dart.
+- flutter test test/ad_helper_test.dart: 3/3 pass.
+- flutter build apk --release: SUCCESS (65.4MB app-release.apk).
+- Environmental fixes (NOT code): fresh worktree was missing two git-ignored files copied from main repo — android/key.properties (release signing config; caused `null cannot be cast to kotlin.String` at build.gradle.kts:27) and android/app/google-services.json (Firebase; `processReleaseGoogleServices` failure). Future worktrees need both copied from the main checkout before a release build.
+- git status clean of unexpected source changes (only SDD bookkeeping + generated registrant/build junk).
+
