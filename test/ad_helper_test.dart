@@ -39,11 +39,11 @@ void main() {
       expect(
         AdHelper.adUnitIdFor(AdPlatform.android, AdType.banner,
             production: true),
-        'ca-app-pub-6138624088986178/4990989256',
+        'ca-app-pub-3222893031015336/8843106337',
       );
       expect(
         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.banner, production: true),
-        'ca-app-pub-6138624088986178/1269723322',
+        'ca-app-pub-3222893031015336/8843106337',
       );
       expect(
         AdHelper.adUnitIdFor(AdPlatform.android, AdType.interstitial,
