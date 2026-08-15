@@ -59,6 +59,8 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   }
 
   Future<void> _loadBuilderBuildsRemaining() async {
+    final regenerated =
+        await _settingsService.maybeRegenerateBuilderBuild();
     final remaining = await _settingsService.loadBuilderBuildsRemaining();
     if (!mounted) {
       return;
@@ -66,6 +68,9 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     setState(() {
       _builderBuildsRemaining = remaining;
     });
+    if (regenerated) {
+      _showMessage('+1 build regenerated');
+    }
   }
 
   Future<void> _loadAdWatchCountForToday() async {
@@ -325,8 +330,8 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     );
 
     if (!wasEditing) {
-      final remaining = await _settingsService.loadBuilderBuildsRemaining();
-      if (remaining > 0) {
+      await _settingsService.loadBuilderBuildsRemaining();
+      if (!await _settingsService.isOutOfBuilds()) {
         await _settingsService.consumeBuilderBuild();
         await _loadBuilderBuildsRemaining();
       } else {
@@ -336,7 +341,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
         }
         _showRewardedAd(() async {
           await _settingsService.addBuilderBuilds(1);
-          await _settingsService.consumeBuilderBuild();
+          await _settingsService.consumeBuilderBuild(armRegeneration: false);
           if (!mounted) {
             return;
           }
@@ -358,13 +363,15 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           backgroundColor: const Color(0xFF101A2B),
           title: const Text('Free build used'),
           content: const Text(
-            'You have used your free workout build. '
-            'Watch a rewarded ad to unlock 1 extra build?',
+            'You have used your free workout build.\n\n'
+            'Watch a rewarded ad to unlock 1 extra build now '
+            '(up to 5 ad-watches per day), or wait 2 days and '
+            'the point will regenerate automatically.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Not now'),
+              child: const Text('Wait 2 days'),
             ),
             FilledButton.icon(
               onPressed: () => Navigator.of(dialogContext).pop(true),

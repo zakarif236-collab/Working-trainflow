@@ -224,7 +224,17 @@ class SettingsService {
     }
   }
 
-  Future<int> loadBuilderBuildsRemaining() async {
+  /// Temporary stopgap: grants one builder point back 2 days after a point was
+  /// spent on the free-build path, so building stays possible while rewarded
+  /// ads don't fill. Flip to `false` once ads start serving.
+  static const bool kBuilderRegenerationEnabled = true;
+
+  static const Duration _kBuilderRegenerationWindow = Duration(days: 2);
+
+  Future<int> loadBuilderBuildsRemaining({
+    DateTime? now,
+    bool regenerationEnabled = kBuilderRegenerationEnabled,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_kBuilderBuildsInitialized) != true) {
       await prefs.setBool(_kBuilderBuildsInitialized, true);
@@ -232,14 +242,64 @@ class SettingsService {
         await prefs.setInt(_kBuilderBuildsRemaining, 1);
       }
     }
+
+    await _maybeRegenerateBuilderBuild(now: now, regenerationEnabled: regenerationEnabled);
+
     return prefs.getInt(_kBuilderBuildsRemaining) ?? 0;
   }
 
-  Future<int> consumeBuilderBuild() async {
+  /// Returns whether the user has no builder points left.
+  Future<bool> isOutOfBuilds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_kBuilderBuildsRemaining) ?? 0) == 0;
+  }
+
+  /// Grants one builder point back if at least 2 days have passed since the
+  /// last free-build spend, clearing the timer so each spend is reimbursed at
+  /// most once. Returns whether a grant happened.
+  Future<bool> maybeRegenerateBuilderBuild({
+    DateTime? now,
+    bool regenerationEnabled = kBuilderRegenerationEnabled,
+  }) {
+    return _maybeRegenerateBuilderBuild(now: now, regenerationEnabled: regenerationEnabled);
+  }
+
+  Future<bool> _maybeRegenerateBuilderBuild({
+    DateTime? now,
+    required bool regenerationEnabled,
+  }) async {
+    if (!regenerationEnabled) {
+      return false;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final lastConsumedAt = prefs.getInt(_kBuilderLastConsumedAt);
+    if (lastConsumedAt == null) {
+      return false;
+    }
+    final elapsed =
+        (now ?? DateTime.now()).millisecondsSinceEpoch - lastConsumedAt;
+    if (elapsed < _kBuilderRegenerationWindow.inMilliseconds) {
+      return false;
+    }
+    await addBuilderBuilds(1);
+    await prefs.remove(_kBuilderLastConsumedAt);
+    return true;
+  }
+
+  Future<int> consumeBuilderBuild({
+    DateTime? now,
+    bool armRegeneration = true,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final current = prefs.getInt(_kBuilderBuildsRemaining) ?? 0;
     final next = (current - 1).clamp(0, 1 << 30);
     await prefs.setInt(_kBuilderBuildsRemaining, next);
+    if (armRegeneration) {
+      await prefs.setInt(
+        _kBuilderLastConsumedAt,
+        (now ?? DateTime.now()).millisecondsSinceEpoch,
+      );
+    }
     return next;
   }
 
@@ -1268,6 +1328,7 @@ String get _kRecentSessions => _userKey('insights.recentSessions');
 String get _kLastReminderEpochDay => _userKey('reminders.lastReminderEpochDay');
 const _kBuilderBuildsRemaining = 'builder.buildsRemaining';
 const _kBuilderBuildsInitialized = 'builder.buildsInitialized';
+const _kBuilderLastConsumedAt = 'builder.lastConsumedAt';
 const _kBuilderAdWatches = 'builder.adWatches';
 String get _kWorkoutBuilderRoutines => _userKey('profile.workoutBuilderRoutines');
 String get _kWorkoutBuilderResumeSession => _userKey('profile.workoutBuilderResumeSession');

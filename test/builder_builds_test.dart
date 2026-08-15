@@ -33,4 +33,21 @@ void main() {
     // A pre-existing count of 0 from an earlier install must stay 0.
     expect(await settings.loadBuilderBuildsRemaining(), 0);
   });
+
+  test('isOutOfBuilds reflects whether any builds remain', () async {
+    SharedPreferences.setMockInitialValues({
+      'builder.buildsRemaining': 0,
+      'builder.buildsInitialized': true,
+    });
+    final settings = SettingsService();
+
+    expect(await settings.isOutOfBuilds(), isTrue);
+
+    await settings.addBuilderBuilds(2);
+    expect(await settings.isOutOfBuilds(), isFalse);
+
+    await settings.consumeBuilderBuild();
+    await settings.consumeBuilderBuild();
+    expect(await settings.isOutOfBuilds(), isTrue);
+  });
 }
