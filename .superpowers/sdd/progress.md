@@ -148,3 +148,27 @@
 ## Notes
 - Worktree at dispatch: uncommitted `lib/firebase_options.dart` (appId → com.TrainFlow.myapp client) and `lib/widgets/workout_schedule_section.dart` (try/catch hardening) exist; OUTSIDE plan scope — implementers stage only their scoped file per plan commit steps.
 - Subagents dispatched without explicit model (OpenCode task tool has no model param — session default used for all roles).
+
+## Plan: docs/superpowers/plans/2026-08-15-admob-new-account-banner.md (BASE 212d364, worktree feat-admob-new-account-banner)
+
+| # | Task | Status | Commit | Review |
+|---|------|--------|--------|--------|
+| 1 | Swap App ID in Android manifest + iOS Info.plist | done | d76d71f | approved |
+| 2 | Update production banner IDs in AdHelper | done | 93dcc64 | approved |
+| 3 | Update tests for new production banner IDs | done | 319149b | approved |
+| 4 | Full verification (analyze, tests, release sanity) | done | - | approved |
+
+## Task 4 verification (controller-confirmed)
+- flutter analyze: 17 issues, ALL pre-existing (2 errors in vendored third_party/flutter_tts/example/test, 15 info lints in community_page/home_page/workout_builder_page/community_firestore_service/flutter_tts_web/flutter_timezone). NONE in the 4 files this plan touched (AndroidManifest.xml, Info.plist, ad_helper.dart, ad_helper_test.dart). Plan's 'no issues' expectation did not match repo baseline; no regressions introduced.
+- flutter test: 48 pass / 3 known baseline widget_test.dart pending-timer failures (Calisthenics, VO2max, Workout timer on home tab) - identical to pre-plan baseline.
+- git grep scoped to android/ios/lib/test: exactly 6 matches (2 config, 2 lib, 2 test).
+- No commit for Task 4 (verification-only).
+- Baseline test run at worktree setup (before any commits) was also 48/3 - confirms no regressions.
+
+## Final branch review (BASE 212d364 -> HEAD 319149b)
+- Verdict: Ready to merge - YES. 3 commits, 4 files, 6 ins/6 del, byte-for-byte plan compliance.
+- Important (user-approved scope, documented): rewarded production IDs (ad_helper.dart:77,81) point at old account 6138624088986178; will NOT fill under new App ID 3222893031015336 until migrated. NOT a code defect - approved banner-only scope. Added to plan Non-Code Follow-up.
+- Minor (no action): shared banner unit across Android+iOS (validate fill on both OSes); unstaged generated_plugin_registrant files in worktree to keep out of merge; release-path coverage static-only (kReleaseMode not exercisable under flutter test).
+- Cross-cutting verified: App ID publisher prefix 3222893031015336 matches new banner unit prefix; old App ID + old banner IDs fully gone from code/config; interstitial TODOs untouched.
+- Controller reran flutter test test/ad_helper_test.dart 3/3 via reviewer. Full suite 48/3 baseline + analyze 17 pre-existing confirmed by controller.
+## Completion

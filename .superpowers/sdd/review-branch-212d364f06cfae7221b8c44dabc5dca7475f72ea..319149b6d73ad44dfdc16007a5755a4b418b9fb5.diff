@@ -1,0 +1,130 @@
+﻿{
+# Branch review package: 212d364f06cfae7221b8c44dabc5dca7475f72ea..319149b6d73ad44dfdc16007a5755a4b418b9fb5
+
+319149b test(ads): assert new production banner ad unit IDs
+93dcc64 feat(ads): use new production banner ad unit IDs
+d76d71f feat(ads): point App ID to new AdMob account
+
+## Files changed
+ android/app/src/main/AndroidManifest.xml | 2 +-
+ ios/Runner/Info.plist                    | 2 +-
+ lib/add/ad_helper.dart                   | 4 ++--
+ test/ad_helper_test.dart                 | 4 ++--
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+## Diff
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 27ede10..7bb5d15 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -10,21 +10,21 @@
+     <uses-permission
+         android:name="android.permission.READ_EXTERNAL_STORAGE"
+         android:maxSdkVersion="32" />
+ 
+     <application
+         android:label="TrainFlow"
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher">
+         <meta-data
+             android:name="com.google.android.gms.ads.APPLICATION_ID"
+-            android:value="ca-app-pub-6138624088986178~6997939566"/>
++            android:value="ca-app-pub-3222893031015336~9049517717"/>
+         <activity
+             android:name=".MainActivity"
+             android:exported="true"
+             android:launchMode="singleTop"
+             android:taskAffinity=""
+             android:theme="@style/LaunchTheme"
+             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+             android:hardwareAccelerated="true"
+             android:windowSoftInputMode="adjustResize">
+             <!-- Specifies an Android theme to apply to this Activity as soon as
+diff --git a/ios/Runner/Info.plist b/ios/Runner/Info.plist
+index f6192dc..4be8bca 100644
+--- a/ios/Runner/Info.plist
++++ b/ios/Runner/Info.plist
+@@ -1,18 +1,18 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+ 	<key>CADisableMinimumFrameDurationOnPhone</key>
+ 	<true/>
+ 	<key>GADApplicationIdentifier</key>
+-	<string>ca-app-pub-6138624088986178~6997939566</string>
++	<string>ca-app-pub-3222893031015336~9049517717</string>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+ 	<key>CFBundleDisplayName</key>
+ 	<string>TrainFlow</string>
+ 	<key>CFBundleExecutable</key>
+ 	<string>$(EXECUTABLE_NAME)</string>
+ 	<key>CFBundleIdentifier</key>
+ 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+ 	<key>CFBundleInfoDictionaryVersion</key>
+ 	<string>6.0</string>
+diff --git a/lib/add/ad_helper.dart b/lib/add/ad_helper.dart
+index 900be97..591c358 100644
+--- a/lib/add/ad_helper.dart
++++ b/lib/add/ad_helper.dart
+@@ -53,25 +53,25 @@ class AdHelper {
+   /// [production] is `kReleaseMode` in the public getters; when `false` the
+   /// Google test IDs are returned so debug builds never hit live inventory.
+   static String adUnitIdFor(
+     AdPlatform platform,
+     AdType type, {
+     required bool production,
+   }) {
+     switch ((platform, type)) {
+       case (AdPlatform.android, AdType.banner):
+         return production
+-            ? 'ca-app-pub-6138624088986178/4990989256'
++            ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/6300978111';
+       case (AdPlatform.ios, AdType.banner):
+         return production
+-            ? 'ca-app-pub-6138624088986178/1269723322'
++            ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/2934735716';
+       case (AdPlatform.android, AdType.interstitial):
+         // TODO(ads): add production interstitial IDs
+         return 'ca-app-pub-3940256099942544/1033173712';
+       case (AdPlatform.ios, AdType.interstitial):
+         // TODO(ads): add production interstitial IDs
+         return 'ca-app-pub-3940256099942544/4411468910';
+       case (AdPlatform.android, AdType.rewarded):
+         return production
+             ? 'ca-app-pub-6138624088986178/2840036851'
+diff --git a/test/ad_helper_test.dart b/test/ad_helper_test.dart
+index dbcb60b..19a79d6 100644
+--- a/test/ad_helper_test.dart
++++ b/test/ad_helper_test.dart
+@@ -32,25 +32,25 @@ void main() {
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.rewarded,
+             production: false),
+         'ca-app-pub-3940256099942544/2178118514',
+       );
+     });
+ 
+     test('uses production IDs when production is true', () {
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.android, AdType.banner,
+             production: true),
+-        'ca-app-pub-6138624088986178/4990989256',
++        'ca-app-pub-3222893031015336/8843106337',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.banner, production: true),
+-        'ca-app-pub-6138624088986178/1269723322',
++        'ca-app-pub-3222893031015336/8843106337',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.android, AdType.interstitial,
+             production: true),
+         'ca-app-pub-3940256099942544/1033173712',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.interstitial,
+             production: true),
+         'ca-app-pub-3940256099942544/4411468910',

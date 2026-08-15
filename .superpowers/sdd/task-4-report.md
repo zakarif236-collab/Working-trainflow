@@ -1,80 +1,62 @@
-# Task 4 Report: `resolveInsights` — DONE
+# Task 4 Report: Full verification — analyze, tests, release config sanity
 
-## Status
+**Status: DONE_WITH_CONCERNS**
 
-**DONE** — committed as `e82d81b` ("feat: resolve insight scalars conflict-safely from session union").
+## 1. `flutter analyze`
 
-## What I implemented
+Ran `flutter analyze` in the worktree. Result: **17 issues found** (2 errors, 15 infos) — NOT "No issues found".
 
-In `lib/services/settings_service.dart`, directly above `pickNewerInsights`:
+All 17 are **pre-existing baseline issues, none introduced by this plan**:
 
-- `DateTime? _later(DateTime? a, DateTime? b)` — later of two timestamps (null-safe).
-- `WorkoutInsights resolveInsights(WorkoutInsights local, WorkoutInsights? remote, List<WorkoutSessionEntry> mergedSessions)`:
-  - Profile fields (`displayName`, `bio`, `profileImagePath`) come from `pickNewerInsights(local, remote)`.
-  - **Non-truncated** (`mergedSessions.length < _kSessionStorageCap`): `totalWorkouts` = union length, `totalSeconds` = sum of `durationSeconds`, streaks from `computeStreaks(mergedSessions)`, `lastWorkoutAt` = `mergedSessions.first.completedAt`.
-  - **Truncated** (`length >= _kSessionStorageCap`): `totalWorkouts`/`totalSeconds`/`currentStreakDays`/`bestStreakDays` are the monotonic max of local/remote (never drops), `lastWorkoutAt` = `_later(local, remote)`.
+- 2 errors in `third_party/flutter_tts/example/test/widget_test.dart` (vendored third-party package, `uri_does_not_exist` / `undefined_function`).
+- 15 infos in app + third_party code: `avoid_print` in `lib/pages/community_page.dart`, `lib/pages/home_page.dart`, `lib/pages/workout_builder_page.dart`, `lib/services/community_firestore_service.dart`; `avoid_types_as_parameter_names` in `community_firestore_service.dart`; `deprecated_member_use` (EquatableMixin) + `invalid_runtime_check_with_js_interop_types` in third_party packages.
 
-In `test/workout_progress_sync_test.dart`: appended the two `resolveInsights` tests from the brief, with the union in the first test written descending (see adjudication below).
+Evidence these are not regressions:
+- The plan's three commits (d76d71f, 93dcc64, 319149b) touch ONLY `android/app/src/main/AndroidManifest.xml`, `ios/Runner/Info.plist`, `lib/add/ad_helper.dart`, `test/ad_helper_test.dart` — none of which appear in the analyze output.
+- `git status`/`git diff` shows no uncommitted changes to any Dart file (only `.superpowers/*` scratch and linux/macos/windows generated plugin registrant files, which are not analyzed Dart).
+- Therefore every flagged file is byte-identical to the pre-plan base, and analyze would produce the identical issue list on the base.
 
-## Controller adjudication (plan-internal contradiction)
+Note: the brief's expectation of "No issues found" does not hold for this repo's actual baseline. This is a pre-existing condition, not a regression from Tasks 1–3.
 
-The brief's own Step 1 test used `union = [entry(1000), entry(2000), entry(3000), entry(4000)]` (ascending) while expecting `lastWorkoutAt == 4000`; the brief's verbatim implementation (`mergedSessions.first.completedAt`) yields `1000` on that order. The controller **approved Option B**: keep `resolveInsights` verbatim (including `mergedSessions.first.completedAt`) and change ONLY the test's union data to descending — `[entry(4000), entry(3000), entry(2000), entry(1000)]` — matching the documented interface contract that `mergedSessions` is the descending-sorted output of `mergeSessionsByTimestamp`. All assertions unchanged. `.first` on the descending union yields the newest session (4000).
+## 2. `flutter test`
 
-## TDD evidence
+Ran the full `flutter test` suite. Result: **48 passed / 3 failed** (51 total).
 
-### RED (expected, Step 2)
-Command: `flutter test test/workout_progress_sync_test.dart --plain-name "resolveInsights"`
+The 3 failures are exactly the documented baseline pending-timer failures in `test/widget_test.dart`, all with the same root cause ("A Timer is still pending even after the widget tree was disposed", an 8s timer from `_FirstPageState._loadInsights` → `SettingsService.loadInsightsFromFirestore`):
+
+1. `Calisthenics quick start opens workout page`
+2. `VO2max quick start opens workout page`
+3. `Workout timer is shown by default on home tab`
+
+All other tests pass, including every banner/ad-related test called out in the brief: `test/ad_helper_test.dart` (3 tests), `test/header_banner_ad_test.dart` (3), `test/scaled_banner_ad_test.dart` (1), `test/builder_ad_watches_test.dart` (6). No new failures, no regressions.
+
+## 3. Release-mode ID resolution (`git grep`)
+
+Ran `git grep -n "3222893031015336" -- android ios lib test` (scoped per brief Step 3; `rg` not installed). Result: **exactly 6 matches**, as expected:
+
 ```
-test/workout_progress_sync_test.dart:167:22: Error: Method not found: 'resolveInsights'.
-test/workout_progress_sync_test.dart:199:22: Error: Method not found: 'resolveInsights'.
-00:00 +0 -1: Some tests failed.
+android/app/src/main/AndroidManifest.xml:20:  android:value="ca-app-pub-3222893031015336~9049517717"/>
+ios/Runner/Info.plist:8:                        <string>ca-app-pub-3222893031015336~9049517717</string>
+lib/add/ad_helper.dart:63:                       ? 'ca-app-pub-3222893031015336/8843106337'
+lib/add/ad_helper.dart:67:                       ? 'ca-app-pub-3222893031015336/8843106337'
+test/ad_helper_test.dart:42:                     'ca-app-pub-3222893031015336/8843106337',
+test/ad_helper_test.dart:46:                     'ca-app-pub-3222893031015336/8843106337',
 ```
 
-### RED (contradiction, pre-adjudication)
-Verbatim code + verbatim ascending test:
-```
-00:00 +0 -1: resolveInsights recomputes counters from a complete union [E]
-  Expected: DateTime:<1970-01-01 01:00:04.000>
-    Actual: DateTime:<1970-01-01 01:00:01.000>
-```
-(truncated-path test passed; documented in the first version of this report.)
+Breakdown: App ID (2 config matches: Android manifest + iOS Info.plist), banner production ID (2 in `ad_helper.dart`, 2 in `ad_helper_test.dart`), and no other files under android/ios/lib/test.
 
-### GREEN (post-adjudication)
-Command: `flutter test test/workout_progress_sync_test.dart`
-```
-00:00 +14: All tests passed!
-```
-All 14 tests pass (12 prior + 2 new `resolveInsights` tests).
+Note: an *unscoped* `git grep` returns additional matches only in plan bookkeeping/docs: `.superpowers/sdd/task-1..4-brief/report.md` and `docs/superpowers/specs/2026-08-15-admob-new-account-banner-design.md`. These are documentation/scratch, not source, and match the brief's own scoping (`rg ... lib test android ios`).
 
-### Analyze
-Command: `flutter analyze` → 11 issues, all pre-existing `info` lints in OTHER files (`avoid_print` in community_page.dart, home_page.dart, workout_builder_page.dart, community_firestore_service.dart; `avoid_types_as_parameter_names` at community_firestore_service.dart:334-336). **No new issues in the two changed files.**
+## 4. Repo hygiene
 
-Note: the brief's verbatim fold used `(sum, s) => sum + s.durationSeconds`; `sum` collides with a visible type name and triggered `avoid_types_as_parameter_names` at settings_service.dart:1264. I renamed the accumulator to `(total, s)` — the only deliberate deviation from verbatim code, required to satisfy the "no new analyze issues" gate. Semantics unchanged.
-
-## Files changed
-
-- `lib/services/settings_service.dart` (committed): `_later`, `resolveInsights`.
-- `test/workout_progress_sync_test.dart` (committed): two `resolveInsights` tests.
-- `.superpowers/sdd/task-4-report.md` (tracked, left uncommitted per convention): this report.
-
-Unrelated working-tree changes (audio_engine.dart, workout_schedule_section.dart, gradle caches, .superpowers/*.md, docs/plans, test/audio_engine_test.dart) were not touched, staged, or committed. Only the two named files were staged via explicit `git add <path>`.
-
-## Self-review findings
-
-- **Non-truncated recompute path:** counters/streaks recomputed from the union; `lastWorkoutAt` = newest (`.first`) — correct per the contract that the union is descending-sorted.
-- **Truncated max path:** all four scalars are monotonic max of local/remote, never dropping below either source; `lastWorkoutAt` = `_later`. Covered by test.
-- **Empty merged sessions:** non-truncated path returns `lastWorkoutAt: null`, counters 0, streaks (0,0). Handled by code; not covered by a test (pre-existing gap, acceptable).
-- **lastWorkoutAt tie:** `_later` returns `b` (remote) on a tie; `pickNewerInsights` also prefers remote on a tie — consistent remote-favoring tie-break. Not covered by a test.
+- Plan commits are clean and minimal: `d76d71f` (Android manifest + iOS Info.plist), `93dcc64` (ad_helper.dart), `319149b` (ad_helper_test.dart).
+- Unrelated modified files present (as expected): `.superpowers/*` scratch and `linux/macos/windows` generated plugin registrants. Nothing staged, nothing committed.
 
 ## Concerns
 
-1. The one deviation from verbatim code: fold accumulator renamed `sum` → `total` to avoid a new analyzer lint. Semantically identical.
-2. Minor pre-existing coverage gaps (empty-union recompute, timestamp tie-break) are not covered by tests; worth adding in a follow-up if desired.
+1. **`flutter analyze` is not clean** — 17 pre-existing issues (incl. 2 errors in vendored `third_party/flutter_tts`). Unrelated to this plan and present on the base; flagged here only because the brief's "No issues found" expectation doesn't match the repo's real baseline.
+2. The brief's `ALL PASS` test expectation was superseded by the known 3-baseline-failure baseline; observed behavior matches that documented baseline exactly.
 
-## Commit
+## No commit
 
-- `e82d81b` feat: resolve insight scalars conflict-safely from session union (2 files, +98)
-
-## Report file
-
-This file: `C:\Users\hp\my_app\.superpowers\sdd\task-4-report.md`
+Per task instructions, no commit was made (Task 4 has no code changes).

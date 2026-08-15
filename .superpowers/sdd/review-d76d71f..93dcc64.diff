@@ -1,0 +1,42 @@
+﻿{
+# Review package: d76d71f..93dcc64
+
+93dcc64 feat(ads): use new production banner ad unit IDs
+
+## Files changed
+ lib/add/ad_helper.dart | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/lib/add/ad_helper.dart b/lib/add/ad_helper.dart
+index 900be97..591c358 100644
+--- a/lib/add/ad_helper.dart
++++ b/lib/add/ad_helper.dart
+@@ -53,25 +53,25 @@ class AdHelper {
+   /// [production] is `kReleaseMode` in the public getters; when `false` the
+   /// Google test IDs are returned so debug builds never hit live inventory.
+   static String adUnitIdFor(
+     AdPlatform platform,
+     AdType type, {
+     required bool production,
+   }) {
+     switch ((platform, type)) {
+       case (AdPlatform.android, AdType.banner):
+         return production
+-            ? 'ca-app-pub-6138624088986178/4990989256'
++            ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/6300978111';
+       case (AdPlatform.ios, AdType.banner):
+         return production
+-            ? 'ca-app-pub-6138624088986178/1269723322'
++            ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/2934735716';
+       case (AdPlatform.android, AdType.interstitial):
+         // TODO(ads): add production interstitial IDs
+         return 'ca-app-pub-3940256099942544/1033173712';
+       case (AdPlatform.ios, AdType.interstitial):
+         // TODO(ads): add production interstitial IDs
+         return 'ca-app-pub-3940256099942544/4411468910';
+       case (AdPlatform.android, AdType.rewarded):
+         return production
+             ? 'ca-app-pub-6138624088986178/2840036851'

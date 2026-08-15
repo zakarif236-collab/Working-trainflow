@@ -1,167 +1,42 @@
-﻿### Task 1: Gate companion notification on foreground state
+### Task 1: Swap App ID in Android manifest and iOS Info.plist
 
 **Files:**
-- Modify: `lib/services/workout_foreground_service.dart` (fields ~31-32, `start` ~72-74, `promoteToForeground` ~114-122, `demoteToBackground` ~125-131, `stop` ~134-144, `update` ~162-167)
+- Modify: `android/app/src/main/AndroidManifest.xml:18-20`
+- Modify: `ios/Runner/Info.plist:7-8`
 
 **Interfaces:**
-- Consumes: existing public API (`start`, `promoteToForeground`, `demoteToBackground`, `update`, `stop`) â€” signatures unchanged.
-- Produces: internal `bool _isForegrounded` that is true only while the companion notification is visible.
+- Consumes: nothing.
+- Produces: platform config files that advertise the new App ID to the AdMob SDK at app launch. Later tasks depend only on `AdHelper`, not on these files directly, but ad serving requires the App ID to match the account owning the production banner unit.
 
-- [ ] **Step 1: Add the `_isForegrounded` field**
+- [ ] **Step 1: Update the Android manifest App ID**
 
-Locate the fields block (~lines 31-34):
+Edit `android/app/src/main/AndroidManifest.xml` lines 18-20. Change only the `android:value`:
 
-```dart
-  bool _isRunning = false;
-  bool get isRunning => _isRunning;
-
-  bool _actionForwarderAttached = false;
+```xml
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3222893031015336~9049517717"/>
 ```
 
-Replace it with:
+- [ ] **Step 2: Update the iOS Info.plist App ID**
 
-```dart
-  bool _isRunning = false;
-  bool get isRunning => _isRunning;
+Edit `ios/Runner/Info.plist` lines 7-8. Change only the string value:
 
-  /// True only while the companion notification is visible (i.e. the app is
-  /// backgrounded/locked). Guards `_showActionNotification` in [update] so no
-  /// notification is posted while the user is inside the app.
-  bool _isForegrounded = false;
-
-  bool _actionForwarderAttached = false;
+```xml
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3222893031015336~9049517717</string>
 ```
 
-- [ ] **Step 2: Reset the flag in `start`**
+- [ ] **Step 3: Verify the change is scoped correctly**
 
-In `start()` (~lines 67-74), find:
+Run: `rg "ca-app-pub-3222893031015336" android ios`
+Expected: exactly 2 matches — one in `android/app/src/main/AndroidManifest.xml`, one in `ios/Runner/Info.plist`.
 
-```dart
-    _isPaused = false;
-    _isMusicPlaying = isMusicPlaying;
-    _lastActionContent = '';
-```
-
-Replace with:
-
-```dart
-    _isPaused = false;
-    _isMusicPlaying = isMusicPlaying;
-    _isForegrounded = false;
-    _lastActionContent = '';
-```
-
-- [ ] **Step 3: Set the flag in `promoteToForeground`**
-
-Find:
-
-```dart
-  Future<void> promoteToForeground() async {
-    if (!_isRunning) return;
-    _updateForegroundNotificationInfo();
-    _service.invoke('setAsForeground');
-```
-
-Replace with:
-
-```dart
-  Future<void> promoteToForeground() async {
-    if (!_isRunning) return;
-    _isForegrounded = true;
-    _updateForegroundNotificationInfo();
-    _service.invoke('setAsForeground');
-```
-
-- [ ] **Step 4: Clear the flag in `demoteToBackground`**
-
-Find:
-
-```dart
-  Future<void> demoteToBackground() async {
-    if (!_isRunning) return;
-    _service.invoke('setAsBackground');
-```
-
-Replace with:
-
-```dart
-  Future<void> demoteToBackground() async {
-    if (!_isRunning) return;
-    _isForegrounded = false;
-    _service.invoke('setAsBackground');
-```
-
-- [ ] **Step 5: Clear the flag in `stop`**
-
-Find:
-
-```dart
-    _service.invoke('stop');
-    _isRunning = false;
-
-    if (Platform.isAndroid) {
-```
-
-Replace with:
-
-```dart
-    _service.invoke('stop');
-    _isRunning = false;
-    _isForegrounded = false;
-
-    if (Platform.isAndroid) {
-```
-
-- [ ] **Step 6: Gate the companion notification in `update`**
-
-Find:
-
-```dart
-    if (_isRunning) {
-      _updateForegroundNotificationInfo();
-      if (Platform.isAndroid) {
-        await _showActionNotification();
-      }
-    }
-```
-
-Replace with:
-
-```dart
-    if (_isRunning) {
-      _updateForegroundNotificationInfo();
-      if (Platform.isAndroid && _isForegrounded) {
-        await _showActionNotification();
-      }
-    }
-```
-
-- [ ] **Step 7: Analyze**
-
-Run: `flutter analyze`
-Expected: no new issues in `lib/services/workout_foreground_service.dart` (pre-existing project warnings may remain).
-
-- [ ] **Step 8: Build debug APK**
-
-Run: `flutter build apk --debug`
-Expected: `âˆš Built build\app\outputs\flutter-apk\app-debug.apk`
-
-- [ ] **Step 9: Manual verification checklist**
-
-On a device/emulator:
-1. Start a workout, stay in the app â‰¥ 5s â†’ no notification appears in the shade.
-2. Press Home (background) â†’ companion Pause/Stop notification appears.
-3. Lock the phone â†’ notification still visible on the lock screen.
-4. Unlock and reopen app â†’ notification disappears.
-5. Stop/reset the workout, start a new one â†’ no stale notification, and while in-app again no notification.
-6. While backgrounded, verify Pause/Stop buttons still work from the notification.
-
-- [ ] **Step 10: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add lib/services/workout_foreground_service.dart
-git commit -m "fix: gate workout companion notification on foreground state"
+git add android/app/src/main/AndroidManifest.xml ios/Runner/Info.plist
+git commit -m "feat(ads): point App ID to new AdMob account"
 ```
 
 ---
-

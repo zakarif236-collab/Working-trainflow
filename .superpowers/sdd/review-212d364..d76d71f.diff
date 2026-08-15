@@ -1,0 +1,62 @@
+﻿{
+# Review package: 212d364..d76d71f
+
+d76d71f feat(ads): point App ID to new AdMob account
+
+## Files changed
+ android/app/src/main/AndroidManifest.xml | 2 +-
+ ios/Runner/Info.plist                    | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 27ede10..7bb5d15 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -10,21 +10,21 @@
+     <uses-permission
+         android:name="android.permission.READ_EXTERNAL_STORAGE"
+         android:maxSdkVersion="32" />
+ 
+     <application
+         android:label="TrainFlow"
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher">
+         <meta-data
+             android:name="com.google.android.gms.ads.APPLICATION_ID"
+-            android:value="ca-app-pub-6138624088986178~6997939566"/>
++            android:value="ca-app-pub-3222893031015336~9049517717"/>
+         <activity
+             android:name=".MainActivity"
+             android:exported="true"
+             android:launchMode="singleTop"
+             android:taskAffinity=""
+             android:theme="@style/LaunchTheme"
+             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+             android:hardwareAccelerated="true"
+             android:windowSoftInputMode="adjustResize">
+             <!-- Specifies an Android theme to apply to this Activity as soon as
+diff --git a/ios/Runner/Info.plist b/ios/Runner/Info.plist
+index f6192dc..4be8bca 100644
+--- a/ios/Runner/Info.plist
++++ b/ios/Runner/Info.plist
+@@ -1,18 +1,18 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+ 	<key>CADisableMinimumFrameDurationOnPhone</key>
+ 	<true/>
+ 	<key>GADApplicationIdentifier</key>
+-	<string>ca-app-pub-6138624088986178~6997939566</string>
++	<string>ca-app-pub-3222893031015336~9049517717</string>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+ 	<key>CFBundleDisplayName</key>
+ 	<string>TrainFlow</string>
+ 	<key>CFBundleExecutable</key>
+ 	<string>$(EXECUTABLE_NAME)</string>
+ 	<key>CFBundleIdentifier</key>
+ 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+ 	<key>CFBundleInfoDictionaryVersion</key>
+ 	<string>6.0</string>
