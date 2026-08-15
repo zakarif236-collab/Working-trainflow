@@ -60,11 +60,11 @@ class AdHelper {
     switch ((platform, type)) {
       case (AdPlatform.android, AdType.banner):
         return production
-            ? 'ca-app-pub-6138624088986178/4990989256'
+            ? 'ca-app-pub-3222893031015336/8843106337'
             : 'ca-app-pub-3940256099942544/6300978111';
       case (AdPlatform.ios, AdType.banner):
         return production
-            ? 'ca-app-pub-6138624088986178/1269723322'
+            ? 'ca-app-pub-3222893031015336/8843106337'
             : 'ca-app-pub-3940256099942544/2934735716';
       case (AdPlatform.android, AdType.interstitial):
         // TODO(ads): add production interstitial IDs
