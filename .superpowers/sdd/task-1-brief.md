@@ -1,42 +1,63 @@
-### Task 1: Swap App ID in Android manifest and iOS Info.plist
+# Task 1: Swap production interstitial IDs
 
 **Files:**
-- Modify: `android/app/src/main/AndroidManifest.xml:18-20`
-- Modify: `ios/Runner/Info.plist:7-8`
+- Modify: `lib/add/ad_helper.dart:69-74`
+- Modify: `test/ad_helper_test.dart:48-57`
 
 **Interfaces:**
-- Consumes: nothing.
-- Produces: platform config files that advertise the new App ID to the AdMob SDK at app launch. Later tasks depend only on `AdHelper`, not on these files directly, but ad serving requires the App ID to match the account owning the production banner unit.
+- Consumes: `AdHelper.adUnitIdFor(AdPlatform, AdType, {required bool production})` — returns `String`.
+- Produces: No new interfaces. `AdHelper.interstitialAdUnitId` now resolves to the new production unit in release builds.
 
-- [ ] **Step 1: Update the Android manifest App ID**
+## Step 1: Update the production interstitial expectations in the test
 
-Edit `android/app/src/main/AndroidManifest.xml` lines 18-20. Change only the `android:value`:
+In `test/ad_helper_test.dart`, replace the two production interstitial expectations (currently lines 48-57) so they assert the new unit ID:
 
-```xml
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3222893031015336~9049517717"/>
+```dart
+      expect(
+        AdHelper.adUnitIdFor(AdPlatform.android, AdType.interstitial,
+            production: true),
+        'ca-app-pub-3222893031015336/1741873338',
+      );
+      expect(
+        AdHelper.adUnitIdFor(AdPlatform.ios, AdType.interstitial,
+            production: true),
+        'ca-app-pub-3222893031015336/1741873338',
+      );
 ```
 
-- [ ] **Step 2: Update the iOS Info.plist App ID**
+## Step 2: Run the test to verify it fails
 
-Edit `ios/Runner/Info.plist` lines 7-8. Change only the string value:
+Run: `flutter test test/ad_helper_test.dart`
+Expected: the `uses production IDs when production is true` test FAILS — Android interstitial expectation got `ca-app-pub-3940256099942544/1033173712` but expected `ca-app-pub-3222893031015336/1741873338`.
 
-```xml
-	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3222893031015336~9049517717</string>
+## Step 3: Update the interstitial cases in `ad_helper.dart`
+
+Replace the two `TODO(ads)` interstitial cases (currently lines 69-74) with:
+
+```dart
+      case (AdPlatform.android, AdType.interstitial):
+        return production
+            ? 'ca-app-pub-3222893031015336/1741873338'
+            : 'ca-app-pub-3940256099942544/1033173712';
+      case (AdPlatform.ios, AdType.interstitial):
+        return production
+            ? 'ca-app-pub-3222893031015336/1741873338'
+            : 'ca-app-pub-3940256099942544/4411468910';
 ```
 
-- [ ] **Step 3: Verify the change is scoped correctly**
+## Step 4: Run the test to verify it passes
 
-Run: `rg "ca-app-pub-3222893031015336" android ios`
-Expected: exactly 2 matches — one in `android/app/src/main/AndroidManifest.xml`, one in `ios/Runner/Info.plist`.
+Run: `flutter test test/ad_helper_test.dart`
+Expected: PASS (all 3 tests).
 
-- [ ] **Step 4: Commit**
+## Step 5: Run analyzer
+
+Run: `flutter analyze`
+Expected: no new issues in `lib/add/ad_helper.dart` or `test/ad_helper_test.dart`.
+
+## Step 6: Commit
 
 ```bash
-git add android/app/src/main/AndroidManifest.xml ios/Runner/Info.plist
-git commit -m "feat(ads): point App ID to new AdMob account"
+git add lib/add/ad_helper.dart test/ad_helper_test.dart
+git commit -m "feat(ads): use new production interstitial ad unit IDs"
 ```
-
----

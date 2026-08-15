@@ -1,0 +1,69 @@
+﻿diff --git a/lib/add/ad_helper.dart b/lib/add/ad_helper.dart
+index 591c358..012e3f9 100644
+--- a/lib/add/ad_helper.dart
++++ b/lib/add/ad_helper.dart
+@@ -60,25 +60,27 @@ class AdHelper {
+     switch ((platform, type)) {
+       case (AdPlatform.android, AdType.banner):
+         return production
+             ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/6300978111';
+       case (AdPlatform.ios, AdType.banner):
+         return production
+             ? 'ca-app-pub-3222893031015336/8843106337'
+             : 'ca-app-pub-3940256099942544/2934735716';
+       case (AdPlatform.android, AdType.interstitial):
+-        // TODO(ads): add production interstitial IDs
+-        return 'ca-app-pub-3940256099942544/1033173712';
++        return production
++            ? 'ca-app-pub-3222893031015336/1741873338'
++            : 'ca-app-pub-3940256099942544/1033173712';
+       case (AdPlatform.ios, AdType.interstitial):
+-        // TODO(ads): add production interstitial IDs
+-        return 'ca-app-pub-3940256099942544/4411468910';
++        return production
++            ? 'ca-app-pub-3222893031015336/1741873338'
++            : 'ca-app-pub-3940256099942544/4411468910';
+       case (AdPlatform.android, AdType.rewarded):
+         return production
+             ? 'ca-app-pub-6138624088986178/2840036851'
+             : 'ca-app-pub-3940256099942544/5224354917';
+       case (AdPlatform.ios, AdType.rewarded):
+         return production
+             ? 'ca-app-pub-6138624088986178/7209425656'
+             : 'ca-app-pub-3940256099942544/2178118514';
+     }
+   }
+diff --git a/test/ad_helper_test.dart b/test/ad_helper_test.dart
+index 19a79d6..b103b0b 100644
+--- a/test/ad_helper_test.dart
++++ b/test/ad_helper_test.dart
+@@ -41,26 +41,26 @@ void main() {
+             production: true),
+         'ca-app-pub-3222893031015336/8843106337',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.banner, production: true),
+         'ca-app-pub-3222893031015336/8843106337',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.android, AdType.interstitial,
+             production: true),
+-        'ca-app-pub-3940256099942544/1033173712',
++        'ca-app-pub-3222893031015336/1741873338',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.interstitial,
+             production: true),
+-        'ca-app-pub-3940256099942544/4411468910',
++        'ca-app-pub-3222893031015336/1741873338',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.android, AdType.rewarded,
+             production: true),
+         'ca-app-pub-6138624088986178/2840036851',
+       );
+       expect(
+         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.rewarded,
+             production: true),
+         'ca-app-pub-6138624088986178/7209425656',
