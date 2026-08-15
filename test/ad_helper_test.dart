@@ -58,12 +58,12 @@ void main() {
       expect(
         AdHelper.adUnitIdFor(AdPlatform.android, AdType.rewarded,
             production: true),
-        'ca-app-pub-6138624088986178/2840036851',
+        'ca-app-pub-3222893031015336/4804623122',
       );
       expect(
         AdHelper.adUnitIdFor(AdPlatform.ios, AdType.rewarded,
             production: true),
-        'ca-app-pub-6138624088986178/7209425656',
+        'ca-app-pub-3222893031015336/4804623122',
       );
     });
 

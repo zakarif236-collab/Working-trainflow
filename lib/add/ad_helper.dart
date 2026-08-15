@@ -76,11 +76,11 @@ class AdHelper {
             : 'ca-app-pub-3940256099942544/4411468910';
       case (AdPlatform.android, AdType.rewarded):
         return production
-            ? 'ca-app-pub-6138624088986178/2840036851'
+            ? 'ca-app-pub-3222893031015336/4804623122'
             : 'ca-app-pub-3940256099942544/5224354917';
       case (AdPlatform.ios, AdType.rewarded):
         return production
-            ? 'ca-app-pub-6138624088986178/7209425656'
+            ? 'ca-app-pub-3222893031015336/4804623122'
             : 'ca-app-pub-3940256099942544/2178118514';
     }
   }
