@@ -22,9 +22,9 @@ migrate_working_dir/
 .idea/
 
 # The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code. Ignored so editor extensions (e.g. an apiKey written to
+# settings.json) cannot dirty the repo or leak credentials into history.
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
