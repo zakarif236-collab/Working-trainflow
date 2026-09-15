@@ -528,6 +528,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
             if (widget.showBuilder) ...[
               EarnPointsCard(
                 buildPoints: _builderBuildsRemaining,
+                pointsPerAd: _kBuildPointsPerAd,
                 todayWatches: _todayAdWatches,
                 maxDailyWatches: _kMaxDailyAdWatches,
                 onWatchAd: _todayAdWatches >= _kMaxDailyAdWatches

@@ -9,6 +9,7 @@ void main() {
         home: Scaffold(
           body: EarnPointsCard(
             buildPoints: 3,
+            pointsPerAd: 4,
             todayWatches: 2,
             maxDailyWatches: 5,
             onWatchAd: null,
@@ -20,7 +21,7 @@ void main() {
     expect(find.text('Earn Points'), findsOneWidget);
     expect(find.text('3 build points'), findsOneWidget);
     expect(find.text('2/5 today'), findsOneWidget);
-    expect(find.text('Watch Ad (+1)'), findsOneWidget);
+    expect(find.text('Watch Ad (+4)'), findsOneWidget);
     expect(
       find.text('Watch ads to earn build points, used when you save a new workout.'),
       findsOneWidget,
@@ -34,6 +35,7 @@ void main() {
         home: Scaffold(
           body: EarnPointsCard(
             buildPoints: 5,
+            pointsPerAd: 4,
             todayWatches: 5,
             maxDailyWatches: 5,
             onWatchAd: null,
@@ -44,7 +46,7 @@ void main() {
 
     final button = tester.widget<FilledButton>(
       find.ancestor(
-        of: find.text('Watch Ad (+1)'),
+        of: find.text('Watch Ad (+4)'),
         matching: find.byType(FilledButton),
       ),
     );
@@ -58,6 +60,7 @@ void main() {
         home: Scaffold(
           body: EarnPointsCard(
             buildPoints: 1,
+            pointsPerAd: 4,
             todayWatches: 0,
             maxDailyWatches: 5,
             onWatchAd: () => tapped = true,
@@ -66,7 +69,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Watch Ad (+1)'));
+    await tester.tap(find.text('Watch Ad (+4)'));
     expect(tapped, isTrue);
   });
 }

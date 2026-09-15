@@ -4,12 +4,14 @@ class EarnPointsCard extends StatelessWidget {
   const EarnPointsCard({
     super.key,
     required this.buildPoints,
+    required this.pointsPerAd,
     required this.todayWatches,
     required this.maxDailyWatches,
     required this.onWatchAd,
   });
 
   final int buildPoints;
+  final int pointsPerAd;
   final int todayWatches;
   final int maxDailyWatches;
   final VoidCallback? onWatchAd;
@@ -46,7 +48,7 @@ class EarnPointsCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onWatchAd,
               icon: const Icon(Icons.play_circle_outline),
-              label: const Text('Watch Ad (+1)'),
+              label: Text('Watch Ad (+$pointsPerAd)'),
             ),
           ),
           const SizedBox(height: 8),
