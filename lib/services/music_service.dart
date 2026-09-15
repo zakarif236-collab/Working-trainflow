@@ -74,41 +74,6 @@ class MusicService {
     }
   }
 
-  Future<List<SongModel>> loadSongs() async {
-    try {
-      final songs = await _query.querySongs(
-        sortType: SongSortType.DISPLAY_NAME,
-        orderType: OrderType.ASC_OR_SMALLER,
-        uriType: UriType.EXTERNAL,
-      );
-
-      final playable = songs.where((song) {
-        final uri = song.uri;
-        return uri != null && uri.isNotEmpty && song.isMusic == true;
-      }).toList();
-
-      if (playable.isEmpty) {
-        throw const MusicServiceException(
-          'No playable songs found on your device yet.',
-        );
-      }
-
-      _playlist = playable;
-      if (_currentSong != null) {
-        _playlistIndex = playable.indexWhere((s) => s.id == _currentSong!.id);
-      }
-
-      return playable;
-    } catch (e) {
-      if (e is MusicServiceException) {
-        rethrow;
-      }
-      throw MusicServiceException(
-        'Unable to read your music library right now: $e',
-      );
-    }
-  }
-
   /// Load only the music physically located under [folderPath] (including
   /// sub-folders, via the MediaStore path filter) and filtered to the allowed
   /// file extensions.
