@@ -10,11 +10,11 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsService();
 
-    // New user gets exactly one free build, persisted to storage.
-    expect(await settings.loadBuilderBuildsRemaining(), 1);
+    // New user gets four free builds, persisted to storage.
+    expect(await settings.loadBuilderBuildsRemaining(), 4);
 
     // User consumes the free build.
-    expect(await settings.consumeBuilderBuild(), 0);
+    expect(await settings.consumeBuilderBuild(), 3);
 
     // The counter key goes missing (simulates a restart / data-loss condition).
     final prefs = await SharedPreferences.getInstance();

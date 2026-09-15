@@ -239,7 +239,7 @@ class SettingsService {
     if (prefs.getBool(_kBuilderBuildsInitialized) != true) {
       await prefs.setBool(_kBuilderBuildsInitialized, true);
       if (!prefs.containsKey(_kBuilderBuildsRemaining)) {
-        await prefs.setInt(_kBuilderBuildsRemaining, 1);
+        await prefs.setInt(_kBuilderBuildsRemaining, 4);
       }
     }
 

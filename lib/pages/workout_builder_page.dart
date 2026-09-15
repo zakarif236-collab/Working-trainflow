@@ -35,7 +35,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   bool _didHandleRouteArgs = false;
   static const int _kMaxDailyAdWatches = 5;
 
-  int _builderBuildsRemaining = 1;
+  int _builderBuildsRemaining = 4;
   int _todayAdWatches = 0;
   RewardedAd? _rewardedAd;
   VoidCallback? _pendingReward;
@@ -84,7 +84,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   }
 
   /// Build points granted per rewarded ad watched.
-  static const _kBuildPointsPerAd = 4;
+  static const _kBuildPointsPerAd = 1;
 
   void _watchAdForPoint() {
     _showRewardedAd(() async {
@@ -367,7 +367,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           title: const Text('Free build used'),
           content: Text(
             'You have used your free workout build.\n\n'
-            'Watch a rewarded ad to unlock $_kBuildPointsPerAd extra builds now '
+            'Watch a rewarded ad to unlock $_kBuildPointsPerAd extra build${_kBuildPointsPerAd == 1 ? '' : 's'} now '
             '(up to 5 ad-watches per day), or wait 2 days and '
             'the point will regenerate automatically.',
           ),
