@@ -13,12 +13,12 @@ class WorkoutForegroundService {
 
   static const _channelId = 'workout_foreground';
   static const _channelName = 'Workout Timer';
-  static const _notificationId = 888;
 
-  /// Companion interactive notification shown while the service is promoted to
-  /// foreground. The plugin's own foreground notification cannot carry action
-  /// buttons, so this one provides the Pause/Resume and Stop controls.
-  static const _actionNotificationId = 889;
+  /// Single notification ID for both the plugin's foreground notification and
+  /// the interactive companion. The companion overwrites the plugin's static
+  /// poster in place (same ID), so only ONE notification is ever visible and
+  /// the plugin never re-posts a second one.
+  static const _notificationId = 889;
   static const _pauseActionId = 'workout.pause';
   static const _stopActionId = 'workout.stop';
 
@@ -41,7 +41,6 @@ class WorkoutForegroundService {
   // Current workout state for notification
   String _workoutName = 'Workout';
   String _exerciseName = '';
-  int _remainingSeconds = 0;
   int _currentSet = 1;
   int _totalSets = 3;
   bool _isPaused = false;
@@ -52,6 +51,14 @@ class WorkoutForegroundService {
   /// change (e.g. localization) can be detected without re-posting on ticks.
   String _lastActionTitle = '';
 
+  /// Wall-clock bookkeeping for the chronometer: [_secondsAtBase] is the
+  /// remaining seconds as of [_baseAtEpochMillis]. Re-posts derive the countdown
+  /// from the elapsed wall-clock time since the base instead of trusting a
+  /// possibly-stale value, keeping the shade in sync even when the Dart isolate
+  /// was frozen while backgrounded.
+  int _secondsAtBase = 0;
+  int _baseAtEpochMillis = 0;
+
   /// Cancel any stale notification (call on app launch to clean up leftovers)
   static Future<void> cancelStaleNotifications() async {
     final plugin = FlutterLocalNotificationsPlugin();
@@ -59,7 +66,6 @@ class WorkoutForegroundService {
     const initSettings = InitializationSettings(android: androidSettings);
     await plugin.initialize(initSettings);
     await plugin.cancel(_notificationId);
-    await plugin.cancel(_actionNotificationId);
   }
 
   /// Start the background service (keeps timer alive in background).
@@ -76,13 +82,15 @@ class WorkoutForegroundService {
 
     _workoutName = workoutName;
     _exerciseName = exerciseName;
-    _remainingSeconds = remainingSeconds;
     _currentSet = currentSet;
     _totalSets = totalSets;
     _isPaused = false;
     _isMusicPlaying = isMusicPlaying;
     _isForegrounded = false;
     _lastActionContent = '';
+    _lastActionTitle = '';
+    _secondsAtBase = remainingSeconds;
+    _baseAtEpochMillis = DateTime.now().millisecondsSinceEpoch;
 
     await _initLocalNotifications();
     await _createNotificationChannel();
@@ -125,20 +133,22 @@ class WorkoutForegroundService {
   Future<void> promoteToForeground() async {
     if (!_isRunning) return;
     _isForegrounded = true;
-    _updateForegroundNotificationInfo();
     _service.invoke('setAsForeground');
     if (Platform.isAndroid) {
+      // Reset the dedupe so the companion version (actions + chronometer)
+      // overwrites the plugin's static poster in the same slot.
       _lastActionContent = '';
       _lastActionTitle = '';
       await _showActionNotification();
     }
   }
 
-  /// Push the authoritative remaining seconds without forcing a re-post of the
-  /// stable body. Call this after the timer reconciles wall-clock time (e.g. on
-  /// resume) so the notification's chronometer matches the on-screen countdown.
+  /// Push the authoritative remaining seconds and force a re-post. Call this
+  /// after the timer reconciles wall-clock time (e.g. on resume) so the
+  /// notification's chronometer matches the on-screen countdown.
   void syncTime(int remainingSeconds) {
-    _remainingSeconds = remainingSeconds;
+    _secondsAtBase = remainingSeconds;
+    _baseAtEpochMillis = DateTime.now().millisecondsSinceEpoch;
     if (!_isForegrounded) return;
     // Re-post so the chronometer's base timestamp is refreshed; the stable body
     // is unchanged, so this does not alert or duplicate.
@@ -153,7 +163,7 @@ class WorkoutForegroundService {
     _isForegrounded = false;
     _service.invoke('setAsBackground');
     if (Platform.isAndroid) {
-      await _localNotifications.cancel(_actionNotificationId);
+      await _localNotifications.cancel(_notificationId);
     }
   }
 
@@ -166,9 +176,8 @@ class WorkoutForegroundService {
     _isForegrounded = false;
 
     if (Platform.isAndroid) {
-      await _localNotifications.cancel(_actionNotificationId);
+      await _localNotifications.cancel(_notificationId);
     }
-    await _localNotifications.cancel(_notificationId);
   }
 
   /// Update workout state
@@ -181,28 +190,20 @@ class WorkoutForegroundService {
     bool? isMusicPlaying,
   }) async {
     if (exerciseName != null) _exerciseName = exerciseName;
-    if (remainingSeconds != null) _remainingSeconds = remainingSeconds;
+    if (remainingSeconds != null) {
+      // The app clock was the source of truth a moment ago; re-anchor the
+      // chronometer base so re-posts count from this fresh value.
+      _secondsAtBase = remainingSeconds;
+      _baseAtEpochMillis = DateTime.now().millisecondsSinceEpoch;
+    }
     if (currentSet != null) _currentSet = currentSet;
     if (totalSets != null) _totalSets = totalSets;
     if (isPaused != null) _isPaused = isPaused;
     if (isMusicPlaying != null) _isMusicPlaying = isMusicPlaying;
 
-    if (_isRunning) {
-      _updateForegroundNotificationInfo();
-      if (Platform.isAndroid && _isForegrounded) {
-        await _showActionNotification();
-      }
+    if (_isRunning && Platform.isAndroid && _isForegrounded) {
+      await _showActionNotification();
     }
-  }
-
-  /// Push the *stable* state to the plugin's own foreground notification (888).
-  /// Intentionally omits the countdown: 888 and the companion (889) must not
-  /// both render a time, or they disagree whenever the isolate is throttled.
-  void _updateForegroundNotificationInfo() {
-    _service.invoke('setNotificationInfo', {
-      'title': _workoutName,
-      'content': _stableActionContent,
-    });
   }
 
   /// Initialize local notifications
@@ -239,6 +240,17 @@ class WorkoutForegroundService {
     _lastActionContent = content;
     _lastActionTitle = _workoutName;
 
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    final effective = effectiveRemainingSeconds(
+      remainingAtBase: _secondsAtBase,
+      baseAtMillis: _baseAtEpochMillis,
+      nowMillis: nowMillis,
+    );
+    // Advance the base so later re-posts keep counting from this instant,
+    // staying accurate against wall clock even if the isolate stalls.
+    _secondsAtBase = effective;
+    _baseAtEpochMillis = nowMillis;
+
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -250,9 +262,9 @@ class WorkoutForegroundService {
         ongoing: true,
         autoCancel: false,
         showWhen: false,
-        usesChronometer: _usesChronometer,
-        chronometerCountDown: _usesChronometer,
-        when: _chronometerBaseMillis,
+        usesChronometer: !_isPaused && effective > 0,
+        chronometerCountDown: !_isPaused && effective > 0,
+        when: nowMillis + (effective * 1000),
         actions: [
           AndroidNotificationAction(
             _pauseActionId,
@@ -263,7 +275,7 @@ class WorkoutForegroundService {
       ),
     );
     await _localNotifications.show(
-      _actionNotificationId,
+      _notificationId,
       _workoutName,
       content,
       details,
@@ -271,14 +283,18 @@ class WorkoutForegroundService {
     );
   }
 
-  /// A running countdown is only meaningful while the workout is actually
-  /// ticking; pausing freezes it at the current remaining seconds.
-  bool get _usesChronometer => !_isPaused && _remainingSeconds > 0;
-
-  /// The chronometer is a countdown to (now + remaining). Recomputed on every
-  /// post so the shade and the timer cannot drift apart.
-  int get _chronometerBaseMillis =>
-      DateTime.now().millisecondsSinceEpoch + (_remainingSeconds * 1000);
+  /// Remaining seconds at [nowMillis], given [remainingAtBase] seconds were left
+  /// at [baseAtMillis]. With an unset base timestamp (0) the value is taken at
+  /// face value. Never returns below zero.
+  static int effectiveRemainingSeconds({
+    required int remainingAtBase,
+    required int baseAtMillis,
+    required int nowMillis,
+  }) {
+    if (baseAtMillis <= 0) return remainingAtBase;
+    final elapsed = ((nowMillis - baseAtMillis) ~/ 1000).clamp(0, remainingAtBase);
+    return remainingAtBase - elapsed;
+  }
 
   /// Handle taps on the companion notification's action buttons.
   void _onNotificationAction(NotificationResponse response) {

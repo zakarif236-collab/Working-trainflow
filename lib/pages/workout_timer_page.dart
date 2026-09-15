@@ -180,10 +180,12 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
         _controller.reconcileElapsed(
           DateTime.now().difference(backgroundedAt),
         );
+        // Adopt the reconciled remaining as authoritative and refresh the
+        // chronometer base so the next promote matches the on-screen countdown.
+        WorkoutForegroundService.instance.syncTime(_controller.remainingSeconds);
+      } else if (WorkoutForegroundService.instance.isRunning) {
+        _pushNotificationState();
       }
-      // Push the reconciled time into the notification before demoting, so the
-      // next promote shows a fresh value instead of a stale one.
-      _pushNotificationState();
       WorkoutForegroundService.instance.demoteToBackground();
     }
   }

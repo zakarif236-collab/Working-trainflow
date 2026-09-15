@@ -147,6 +147,11 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
         WorkoutForegroundService.instance.promoteToForeground();
       }
     } else if (state == AppLifecycleState.resumed) {
+      if (_isRunning) {
+        // Refresh the chronometer base so the next promote matches the
+        // on-screen countdown instead of a stale pre-background value.
+        WorkoutForegroundService.instance.syncTime(_remainingSeconds);
+      }
       WorkoutForegroundService.instance.demoteToBackground();
     }
   }
