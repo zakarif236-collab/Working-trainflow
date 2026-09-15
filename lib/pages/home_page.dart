@@ -195,6 +195,19 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    // Rep-based strength sessions run through the builder player, not the
+    // classic countdown timer.
+    if (selectedMode == _TrainingMode.strengthReps) {
+      if (!context.mounted) return;
+      await Navigator.of(context).pushNamed(
+        '/workout-builder-player',
+        arguments: quickStartChestWorkout,
+      );
+      if (!mounted) return;
+      await _refreshResumeSession();
+      return;
+    }
+
     final config = _presetForMode(selectedMode);
     if (widget.onStartTraining != null) {
       widget.onStartTraining!(config);
@@ -240,8 +253,63 @@ class _HomePageState extends State<HomePage> {
           finalRestSeconds: 180,
           program: WorkoutProgram.vo2max,
         );
+      case _TrainingMode.strengthReps:
+        // Not used: strength/reps sessions launch the builder player directly.
+        return const WorkoutConfig(
+          sets: 4,
+          workSeconds: 40,
+          restSeconds: 40,
+          warmupSeconds: 0,
+          cooldownSeconds: 0,
+          intensity: WorkoutIntensity.medium,
+          program: WorkoutProgram.custom,
+        );
     }
   }
+
+  /// Sample Chest Day routine launched from the Quick Start "Reps / Strength"
+  /// tile. Related GIFs are matched by exercise-name keywords in
+  /// assets/exercises/images/ (bench_press.gif, incline_dumbbell_press.gif,
+  /// chest_press.gif, cable_fly.gif).
+  WorkoutBuilderRoutine get quickStartChestWorkout => WorkoutBuilderRoutine(
+        id: 'quick-start-chest-strength',
+        name: 'Chest Workout',
+        createdAt: DateTime.now(),
+        exercises: const [
+          WorkoutBuilderExercise(
+            name: 'Bench Press',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 40,
+          ),
+          WorkoutBuilderExercise(
+            name: 'Incline Dumbbell Press',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 40,
+          ),
+          WorkoutBuilderExercise(
+            name: 'Chest Press',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 40,
+          ),
+          WorkoutBuilderExercise(
+            name: 'Cable Fly',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 30,
+          ),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -441,7 +509,7 @@ class _ModCard extends StatelessWidget {
   }
 }
 
-enum _TrainingMode { hiitCardio, tabataCardio, vo2max }
+enum _TrainingMode { hiitCardio, tabataCardio, vo2max, strengthReps }
 
 class _TrainingModeSheet extends StatelessWidget {
   const _TrainingModeSheet({required this.onSelected});
@@ -494,6 +562,12 @@ class _TrainingModeSheet extends StatelessWidget {
               subtitle: '10 min warm-up, 4x(4:00 push / 3:00 recover), 5-10 min cool-down',
               highlighted: true,
               onTap: () => onSelected(_TrainingMode.vo2max),
+            ),
+            _TrainingModeTile(
+              icon: Icons.fitness_center_rounded,
+              title: 'Reps / Strength',
+              subtitle: 'Chest Workout · 4x12 Bench Press, 3x10 Incline Press, 3x12 Chest Press, 3x15 Cable Fly',
+              onTap: () => onSelected(_TrainingMode.strengthReps),
             ),
             _TrainingModeTile(
               icon: Icons.flash_on_rounded,

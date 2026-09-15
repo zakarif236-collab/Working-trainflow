@@ -12,6 +12,11 @@ enum WorkoutProgram {
 
 enum WorkoutPhaseType { warmup, work, rest, cooldown, complete }
 
+/// How a builder exercise is performed. Rep-based exercises have the athlete
+/// complete a target number of reps per set manually (no work countdown);
+/// time-based exercises count down a fixed work duration per set.
+enum WorkoutExerciseType { reps, time }
+
 class WorkoutConfig {
   const WorkoutConfig({
     required this.sets,
@@ -84,24 +89,60 @@ class WorkoutPhase {
 class WorkoutBuilderExercise {
   const WorkoutBuilderExercise({
     required this.name,
-    required this.workSeconds,
+    this.type = WorkoutExerciseType.time,
+    this.sets = 1,
+    this.reps = 10,
+    this.workSeconds = 40,
     required this.restSeconds,
     this.mediaPath = '',
   });
 
   final String name;
+  final WorkoutExerciseType type;
+  final int sets;
+  final int reps;
   final int workSeconds;
   final int restSeconds;
   final String mediaPath;
 
+  /// Seconds assumed for a single set of work, used only for progress and
+  /// duration estimates. A rep-based set has no wall-clock duration in the app,
+  /// so the rep target is converted into a rough estimate. Time-based exercises
+  /// use their configured work duration.
+  int get assumedSetSeconds {
+    if (type == WorkoutExerciseType.reps) {
+      return (reps * 3).clamp(10, 600);
+    }
+    return workSeconds;
+  }
+
+  /// The target reps for a rep-based exercise, or 0 for time-based ones.
+  int get targetReps => type == WorkoutExerciseType.reps ? reps : 0;
+
+  /// Estimated total duration including every set plus the rest that follows
+  /// each set. A single-set exercise keeps its configured rest as the bridge to
+  /// the next exercise; a multi-set exercise rests after every set except the
+  /// final one (the athlete moves straight to the next exercise after the last
+  /// set).
+  int get estimatedDurationSeconds {
+    final restRounds = sets == 1 ? 1 : (sets - 1).clamp(1, 50);
+    return sets * assumedSetSeconds + restSeconds * restRounds;
+  }
+
   WorkoutBuilderExercise copyWith({
     String? name,
+    WorkoutExerciseType? type,
+    int? sets,
+    int? reps,
     int? workSeconds,
     int? restSeconds,
     String? mediaPath,
   }) {
     return WorkoutBuilderExercise(
       name: name ?? this.name,
+      type: type ?? this.type,
+      sets: sets ?? this.sets,
+      reps: reps ?? this.reps,
       workSeconds: workSeconds ?? this.workSeconds,
       restSeconds: restSeconds ?? this.restSeconds,
       mediaPath: mediaPath ?? this.mediaPath,
@@ -111,6 +152,9 @@ class WorkoutBuilderExercise {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'type': type.name,
+      'sets': sets,
+      'reps': reps,
       'workSeconds': workSeconds,
       'restSeconds': restSeconds,
       'mediaPath': mediaPath,
@@ -118,12 +162,20 @@ class WorkoutBuilderExercise {
   }
 
   static WorkoutBuilderExercise fromJson(Map<String, dynamic> json) {
+    final typeName = json['type'] as String? ?? WorkoutExerciseType.time.name;
+    final type = WorkoutExerciseType.values.firstWhere(
+      (e) => e.name == typeName,
+      orElse: () => WorkoutExerciseType.time,
+    );
     return WorkoutBuilderExercise(
       name: (json['name'] as String?)?.trim().isNotEmpty == true
           ? (json['name'] as String).trim()
           : 'Exercise',
-      // Legacy routines that still include sets/reps are collapsed to a single
-      // timed interval per exercise to match the new interval-builder model.
+      // Legacy routines predate the per-exercise sets/reps model. They are
+      // treated as single-set time-based intervals to match the old behavior.
+      type: type,
+      sets: ((json['sets'] as num?)?.toInt() ?? 1).clamp(1, 50),
+      reps: ((json['reps'] as num?)?.toInt() ?? 10).clamp(1, 500),
       workSeconds: ((json['workSeconds'] as num?)?.toInt() ?? 40).clamp(5, 900),
       restSeconds: ((json['restSeconds'] as num?)?.toInt() ?? 20).clamp(0, 900),
       mediaPath: (json['mediaPath'] as String?)?.trim() ?? '',
@@ -147,8 +199,7 @@ class WorkoutBuilderRoutine {
   int get estimatedDurationSeconds {
     var total = 0;
     for (final exercise in exercises) {
-      total += exercise.workSeconds;
-      total += exercise.restSeconds;
+      total += exercise.estimatedDurationSeconds;
     }
     return total;
   }
@@ -157,7 +208,9 @@ class WorkoutBuilderRoutine {
     final buffer = StringBuffer(name.trim().toLowerCase());
     for (final exercise in exercises) {
       buffer.write('|${exercise.name.trim().toLowerCase()}');
-      buffer.write(':${exercise.workSeconds}:${exercise.restSeconds}');
+      buffer.write(':${exercise.type.name}:${exercise.sets}');
+      buffer.write(':${exercise.reps}:${exercise.workSeconds}');
+      buffer.write(':${exercise.restSeconds}');
     }
     return buffer.toString();
   }
@@ -368,8 +421,7 @@ class CommunityWorkout {
   int get estimatedDurationSeconds {
     var total = 0;
     for (final exercise in exercises) {
-      total += exercise.workSeconds;
-      total += exercise.restSeconds;
+      total += exercise.estimatedDurationSeconds;
     }
     return total;
   }

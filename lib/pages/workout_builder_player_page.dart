@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -21,7 +22,17 @@ import 'package:my_app/widgets/workout_player_widgets.dart';
 import 'package:my_app/widgets/workout_timeline.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-enum _BuilderPhaseType { work, rest, complete }
+enum _BuilderPhaseType {
+  /// A timed work interval that counts down.
+  work,
+
+  /// A manual-rep set: the athlete taps SET COMPLETE when finished; there is no
+  /// wall-clock countdown in the app.
+  reps,
+
+  rest,
+  complete,
+}
 
 class _BuilderPhase {
   const _BuilderPhase({
@@ -30,13 +41,28 @@ class _BuilderPhase {
     required this.exerciseIndex,
     required this.exercise,
     required this.label,
+    this.setNumber,
+    this.totalSets,
   });
 
   final _BuilderPhaseType type;
+
+  /// Nominal seconds for the phase. For timed phases this is the real countdown
+  /// length; for reps phases it is only an estimate used for progress/duration
+  /// math (never ticked down).
   final int durationSeconds;
   final int exerciseIndex;
   final WorkoutBuilderExercise exercise;
   final String label;
+
+  /// 1-based index of the set within its exercise (reps phases only).
+  final int? setNumber;
+
+  /// Total number of sets for the exercise (reps phases only).
+  final int? totalSets;
+
+  bool get isReps => type == _BuilderPhaseType.reps;
+  bool get isWork => type == _BuilderPhaseType.work;
 }
 
 class WorkoutBuilderPlayerPage extends StatefulWidget {
@@ -67,6 +93,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   int _lastObservedPhaseIndex = -1;
   int _lastAnnouncedSeconds = -1;
   List<String> _exerciseNames = [];
+  List<String> _exerciseImageAssets = const [];
 
   @override
   void initState() {
@@ -138,6 +165,8 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
         workoutName: routine.name,
       ));
     }
+
+    unawaited(_loadExerciseMedia());
   }
 
   @override
@@ -249,7 +278,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   List<String> _buildExerciseNames() {
     final names = <String>[];
     for (final phase in _timeline) {
-      if (phase.type == _BuilderPhaseType.work) {
+      if (phase.isWork || phase.isReps) {
         if (!names.contains(phase.exercise.name)) {
           names.add(phase.exercise.name);
         }
@@ -261,6 +290,9 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   String _phaseVoiceCueText(_BuilderPhase phase) {
     if (phase.type == _BuilderPhaseType.rest) {
       return 'Rest';
+    }
+    if (phase.isReps) {
+      return '${phase.label}, set ${phase.setNumber ?? 1} of ${phase.totalSets ?? 1}';
     }
     return phase.exercise.name;
   }
@@ -323,30 +355,144 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
 
     for (var i = 0; i < routine.exercises.length; i++) {
       final exercise = routine.exercises[i];
-      phases.add(
-        _BuilderPhase(
-          type: _BuilderPhaseType.work,
-          durationSeconds: exercise.workSeconds,
-          exerciseIndex: i,
-          exercise: exercise,
-          label: exercise.name,
-        ),
-      );
+      final isReps = exercise.type == WorkoutExerciseType.reps;
+      final exerciseSets = exercise.sets.clamp(1, 50);
 
-      if (exercise.restSeconds > 0) {
+      for (var s = 1; s <= exerciseSets; s++) {
+        final isFinalSet = s == exerciseSets;
         phases.add(
           _BuilderPhase(
-            type: _BuilderPhaseType.rest,
-            durationSeconds: exercise.restSeconds,
+            type: isReps ? _BuilderPhaseType.reps : _BuilderPhaseType.work,
+            durationSeconds: exercise.assumedSetSeconds,
             exerciseIndex: i,
             exercise: exercise,
-            label: 'Rest',
+            label: exercise.name,
+            setNumber: s,
+            totalSets: exerciseSets,
           ),
         );
+
+        // Rest bridges to the next set, or to the next exercise when this
+        // exercise has a single set. Only the final set of a multi-set exercise
+        // moves straight to the next exercise without a rest.
+        final hasRestRound = exerciseSets > 1
+            ? !isFinalSet && exercise.restSeconds > 0
+            : exercise.restSeconds > 0;
+        if (hasRestRound) {
+          phases.add(
+            _BuilderPhase(
+              type: _BuilderPhaseType.rest,
+              durationSeconds: exercise.restSeconds,
+              exerciseIndex: i,
+              exercise: exercise,
+              label: 'Rest',
+            ),
+          );
+        }
       }
     }
 
     return phases;
+  }
+
+  Future<void> _loadExerciseMedia() async {
+    try {
+      final assetKeys = await _bundleAssetKeys();
+      final imageAssets =
+          assetKeys
+              .where(
+                (path) =>
+                    path.startsWith('assets/exercises/images/') &&
+                    _isSupportedImageAsset(path),
+              )
+              .toList()
+            ..sort();
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exerciseImageAssets = imageAssets;
+      });
+    } catch (_) {
+      // Asset manifest unavailable (e.g. headless test runs): fall back to no
+      // bundled related media. User-attached media still works.
+      return;
+    }
+  }
+
+  Future<List<String>> _bundleAssetKeys() async {
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      return manifest.listAssets();
+    } catch (_) {
+      // Older Flutter toolchains served a JSON manifest instead.
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final manifestMap = jsonDecode(manifestContent) as Map<String, dynamic>;
+      return manifestMap.keys.toList();
+    }
+  }
+
+  bool _isSupportedImageAsset(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.gif') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.webp');
+  }
+
+  /// Resolves the media to show for an exercise: the user-attached media file
+  /// wins, otherwise a bundled asset (GIF/image) whose file name matches the
+  /// exercise name keywords is used, otherwise an empty string (gradient).
+  String _resolveMediaForExercise(WorkoutBuilderExercise exercise) {
+    final userPath = exercise.mediaPath.trim();
+    if (userPath.isNotEmpty) {
+      return userPath;
+    }
+    final keywords = _keywordsForName(exercise.name);
+    if (keywords.isEmpty) {
+      return '';
+    }
+    for (final asset in _exerciseImageAssets) {
+      final baseName = _assetBaseName(asset).toLowerCase();
+      if (keywords.every(baseName.contains)) {
+        return asset;
+      }
+    }
+    return '';
+  }
+
+  List<String> _keywordsForName(String name) {
+    final tokens = name
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((token) => token.length >= 3)
+        .toList();
+    const stopWords = {
+      'the',
+      'and',
+      'with',
+      'for',
+      'your',
+      'you',
+      'get',
+      'dumbbell',
+      'machine',
+    };
+    return tokens.where((token) => !stopWords.contains(token)).toList();
+  }
+
+  String _assetBaseName(String assetPath) {
+    final lastSlash = assetPath.lastIndexOf('/');
+    final String fileName;
+    if (lastSlash >= 0) {
+      fileName = assetPath.substring(lastSlash + 1);
+    } else {
+      fileName = assetPath;
+    }
+    final lastDot = fileName.lastIndexOf('.');
+    return lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
   }
 
   _BuilderPhase get _currentPhase {
@@ -371,6 +517,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   List<Color> get _phasePalette {
     switch (_currentPhase.type) {
       case _BuilderPhaseType.work:
+      case _BuilderPhaseType.reps:
         return const [Color(0xFF8B1A2A), Color(0xFFFF5A5F)];
       case _BuilderPhaseType.rest:
         return const [Color(0xFF0E4D6B), Color(0xFF2AB7CA)];
@@ -430,17 +577,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     HapticFeedback.heavyImpact();
 
     // Start foreground service
-    try {
-      final phase = _timeline[_phaseIndex];
-      WorkoutForegroundService.instance.start(
-        workoutName: _routine?.name ?? 'Workout',
-        exerciseName: phase.label,
-        remainingSeconds: _remainingSeconds,
-        currentSet: _currentExerciseOrdinal(),
-        totalSets: _totalExerciseCount,
-        isMusicPlaying: _musicService.player.playing,
-      );
-    } catch (_) {}
+    unawaited(_startForegroundService(_phaseIndex));
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isRunning) {
@@ -448,6 +585,11 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
       }
 
       setState(() {
+        // Reps phases never auto-advance: the athlete completes each set
+        // manually. All other phases tick down as usual.
+        if (_currentPhase.isReps) {
+          return;
+        }
         _remainingSeconds -= 1;
         if (_remainingSeconds <= 0) {
           _moveToNextPhase();
@@ -464,6 +606,22 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     unawaited(_persistResumeSnapshot());
   }
 
+  Future<void> _startForegroundService(int phaseIndex) async {
+    try {
+      final phase = _timeline[phaseIndex];
+      await WorkoutForegroundService.instance.start(
+        workoutName: _routine?.name ?? 'Workout',
+        exerciseName: _notificationExerciseName(phase),
+        remainingSeconds: _remainingSeconds,
+        currentSet: _currentExerciseOrdinal(),
+        totalSets: _totalExerciseCount,
+        isMusicPlaying: _musicService.player.playing,
+      );
+    } catch (_) {
+      // Foreground service unavailable (tests / unsupported platforms).
+    }
+  }
+
   void _pause() {
     _ticker?.cancel();
     setState(() {
@@ -473,22 +631,31 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     unawaited(_persistResumeSnapshot());
   }
 
-  /// Number of work phases in the timeline (the real "total sets").
+  /// Number of work/reps phases in the timeline (the real "total sets").
   int get _totalExerciseCount =>
-      _timeline.where((p) => p.type == _BuilderPhaseType.work).length;
+      _timeline.where((p) => p.isWork || p.isReps).length;
 
   /// Ordinal (1-based) of the current exercise, or 0 when the current phase is
-  /// not a work phase — so the notification omits a misleading set label during
-  /// warmup/rest/cooldown.
+  /// not a work/reps phase — so the notification omits a misleading set label
+  /// during warmup/rest/cooldown.
   int _currentExerciseOrdinal() {
     if (_phaseIndex >= _timeline.length) return 0;
-    if (_timeline[_phaseIndex].type != _BuilderPhaseType.work) return 0;
+    if (!_timeline[_phaseIndex].isWork && !_timeline[_phaseIndex].isReps) return 0;
 
     int ordinal = 0;
     for (int i = 0; i <= _phaseIndex; i++) {
-      if (_timeline[i].type == _BuilderPhaseType.work) ordinal++;
+      if (_timeline[i].isWork || _timeline[i].isReps) ordinal++;
     }
     return ordinal;
+  }
+
+  /// Notification title for the current phase. Reps phases surface the active
+  /// set so the athlete knows which set they are on from the lock screen.
+  String _notificationExerciseName(_BuilderPhase phase) {
+    if (phase.isReps) {
+      return '${phase.label} • Set ${phase.setNumber ?? 1}/${phase.totalSets ?? 1}';
+    }
+    return phase.label;
   }
 
   /// Push timer state to the persistent notification. Safe to call every tick;
@@ -497,9 +664,10 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   void _pushNotificationState() {
     if (!WorkoutForegroundService.instance.isRunning) return;
     if (_phaseIndex >= _timeline.length) return;
+    final phase = _timeline[_phaseIndex];
     final ordinal = _currentExerciseOrdinal();
     WorkoutForegroundService.instance.update(
-      exerciseName: _timeline[_phaseIndex].label,
+      exerciseName: _notificationExerciseName(phase),
       remainingSeconds: _remainingSeconds,
       currentSet: ordinal,
       totalSets: ordinal == 0 ? 0 : _totalExerciseCount,
@@ -532,6 +700,21 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     unawaited(_persistResumeSnapshot());
   }
 
+  /// Marks the current manual-rep set as complete and advances to the rest
+  /// phase, the next set of the same exercise, the next exercise, or workout
+  /// completion — exactly as if a timed set had counted down to zero.
+  void _completeRepSet() {
+    if (_timeline.isEmpty || _isComplete) {
+      return;
+    }
+    if (!_currentPhase.isReps) {
+      return;
+    }
+    setState(_moveToNextPhase);
+    unawaited(_handleWorkoutCues());
+    unawaited(_persistResumeSnapshot());
+  }
+
   void _moveToNextPhase() {
     if (_phaseIndex < _timeline.length - 1) {
       _phaseIndex += 1;
@@ -550,6 +733,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   WorkoutPhaseType _mapPhaseType(_BuilderPhaseType type) {
     switch (type) {
       case _BuilderPhaseType.work:
+      case _BuilderPhaseType.reps:
         return WorkoutPhaseType.work;
       case _BuilderPhaseType.rest:
         return WorkoutPhaseType.rest;
@@ -563,6 +747,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
       type: _mapPhaseType(phase.type),
       durationSeconds: phase.durationSeconds,
       label: phase.label,
+      setNumber: phase.setNumber,
     );
   }
 
@@ -649,9 +834,21 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     final current = _currentPhase;
     final palette = _phasePalette;
     final nextPhase = _nextPhase;
+    final isRepsPhase = current.isReps;
     final accentColor = current.type == _BuilderPhaseType.rest
         ? const Color(0xFF60A5FA)
         : palette.first;
+    final currentMediaPath = (current.isWork || current.isReps)
+        ? _resolveMediaForExercise(current.exercise)
+        : '';
+    final nextLabel = nextPhase.label;
+    final nextDuration = nextPhase.durationSeconds;
+    final nextInfo = nextPhase.isReps
+        ? '${nextPhase.exercise.name} · ${nextPhase.setNumber ?? 1}/${nextPhase.totalSets ?? 1}'
+        : '$nextLabel (${nextDuration}s)';
+    final remainingInfo = isRepsPhase
+        ? '${current.exercise.targetReps} reps'
+        : '$_remainingSeconds seconds';
 
     return Scaffold(
       body: AnimatedContainer(
@@ -776,26 +973,42 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
                       padding: const EdgeInsets.symmetric(horizontal: 18),
                       children: [
                         _ExerciseHeroCard(
-                          mediaPath: current.type == _BuilderPhaseType.work
-                              ? current.exercise.mediaPath
-                              : '',
+                          mediaPath: currentMediaPath,
                           remainingSeconds: _remainingSeconds,
                           totalSeconds: current.durationSeconds,
                           phaseLabel: current.label,
                           isRestPhase: current.type == _BuilderPhaseType.rest,
+                          isRepsPhase: isRepsPhase,
+                          setNumber: current.setNumber,
+                          totalSets: current.totalSets,
+                          targetReps: isRepsPhase ? current.exercise.targetReps : 0,
                           palette: palette,
                           elapsedSeconds: _elapsedSeconds,
                           totalWorkoutSeconds: _totalSeconds,
+                          isComplete: _isComplete,
                           phaseBadge: PhaseBadge(
                             icon: current.type == _BuilderPhaseType.rest
                                 ? Icons.pause_rounded
-                                : Icons.fitness_center_rounded,
+                                : isRepsPhase
+                                    ? Icons.fitness_center_rounded
+                                    : Icons.timer_outlined,
                             label: current.type == _BuilderPhaseType.rest
                                 ? 'REST'
-                                : 'WORK',
+                                : isRepsPhase
+                                    ? 'REPS'
+                                    : 'WORK',
                             accent: accentColor,
                           ),
                         ),
+                        if (isRepsPhase) ...[
+                          const SizedBox(height: 16),
+                          _RepSetCompleteButton(
+                            setNumber: current.setNumber ?? 1,
+                            totalSets: current.totalSets ?? 1,
+                            targetReps: current.exercise.targetReps,
+                            onPressed: _completeRepSet,
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(99),
@@ -824,9 +1037,8 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
                         const SizedBox(height: 16),
                         if (!_isComplete)
                           _InfoCard(
-                            nextLabel: nextPhase.label,
-                            nextDuration: nextPhase.durationSeconds,
-                            remainingSeconds: _remainingSeconds,
+                            nextValue: nextInfo,
+                            remainingValue: remainingInfo,
                           ),
                         const SizedBox(height: 20),
                         _ControlBar(
@@ -853,7 +1065,9 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
             if (_isComplete)
               _BuilderCompletionOverlay(
                 totalSeconds: _totalSeconds,
-                completedExercises: _timeline.where((p) => p.type == _BuilderPhaseType.work).length,
+                completedExercises: _timeline
+                    .where((p) => p.isWork || p.isReps)
+                    .length,
                 routineName: routine.name,
                 onDone: () {
                   final navigator = Navigator.of(context);
@@ -889,10 +1103,15 @@ class _ExerciseHeroCard extends StatelessWidget {
     required this.totalSeconds,
     required this.phaseLabel,
     required this.isRestPhase,
+    required this.isRepsPhase,
+    required this.setNumber,
+    required this.totalSets,
+    required this.targetReps,
     required this.palette,
     required this.phaseBadge,
     required this.elapsedSeconds,
     required this.totalWorkoutSeconds,
+    required this.isComplete,
   });
 
   final String mediaPath;
@@ -900,16 +1119,22 @@ class _ExerciseHeroCard extends StatelessWidget {
   final int totalSeconds;
   final String phaseLabel;
   final bool isRestPhase;
+  final bool isRepsPhase;
+  final int? setNumber;
+  final int? totalSets;
+  final int targetReps;
   final List<Color> palette;
   final Widget phaseBadge;
   final int elapsedSeconds;
   final int totalWorkoutSeconds;
+  final bool isComplete;
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final heroHeight = screenHeight * 0.5;
     final hasMedia = !isRestPhase && mediaPath.trim().isNotEmpty;
+    final isBundledAsset = mediaPath.trim().startsWith('assets/exercises/');
     final progress = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0.0;
 
     return SizedBox(
@@ -923,10 +1148,19 @@ class _ExerciseHeroCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (hasMedia)
-              Image.file(
-                File(mediaPath.trim()),
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _buildGradientBackground(),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(0),
+                child: isBundledAsset
+                    ? Image.asset(
+                        mediaPath.trim(),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _buildGradientBackground(),
+                      )
+                    : Image.file(
+                        File(mediaPath.trim()),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _buildGradientBackground(),
+                      ),
               )
             else
               _buildGradientBackground(),
@@ -951,14 +1185,23 @@ class _ExerciseHeroCard extends StatelessWidget {
               bottom: 0,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: CountdownBar(
-                  progress: progress,
-                  seconds: remainingSeconds,
-                  phaseLabel: phaseLabel,
-                  gradient: palette,
-                  elapsedSeconds: elapsedSeconds,
-                  totalSeconds: totalWorkoutSeconds,
-                ),
+                child: isRepsPhase
+                    ? _RepSetPanel(
+                        setNumber: setNumber ?? 1,
+                        totalSets: totalSets ?? 1,
+                        targetReps: targetReps,
+                        exerciseName: phaseLabel,
+                      )
+                    : isComplete
+                        ? const SizedBox.shrink()
+                        : CountdownBar(
+                        progress: progress,
+                        seconds: remainingSeconds,
+                        phaseLabel: phaseLabel,
+                        gradient: palette,
+                        elapsedSeconds: elapsedSeconds,
+                        totalSeconds: totalWorkoutSeconds,
+                      ),
               ),
             ),
           ],
@@ -983,6 +1226,122 @@ class _ExerciseHeroCard extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.2),
           size: 64,
         ),
+      ),
+    );
+  }
+}
+
+class _RepSetPanel extends StatelessWidget {
+  const _RepSetPanel({
+    required this.setNumber,
+    required this.totalSets,
+    required this.targetReps,
+    required this.exerciseName,
+  });
+
+  final int setNumber;
+  final int totalSets;
+  final int targetReps;
+  final String exerciseName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  exerciseName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'SET $setNumber/$totalSets',
+                style: TextStyle(
+                  color: const Color(0xFFFF8A1E),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'TARGET $targetReps REPS',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 30,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepSetCompleteButton extends StatelessWidget {
+  const _RepSetCompleteButton({
+    required this.setNumber,
+    required this.totalSets,
+    required this.targetReps,
+    required this.onPressed,
+  });
+
+  final int setNumber;
+  final int totalSets;
+  final int targetReps;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 58,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFFFF8A1E),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.4,
+          ),
+          shadowColor: Colors.transparent,
+        ),
+        icon: const Icon(Icons.check_circle_rounded, size: 26),
+        label: Text('SET $setNumber/$totalSets COMPLETE'),
       ),
     );
   }
@@ -1034,14 +1393,12 @@ class _InfoColumn extends StatelessWidget {
 
 class _InfoCard extends StatelessWidget {
   const _InfoCard({
-    required this.nextLabel,
-    required this.nextDuration,
-    required this.remainingSeconds,
+    required this.nextValue,
+    required this.remainingValue,
   });
 
-  final String nextLabel;
-  final int nextDuration;
-  final int remainingSeconds;
+  final String nextValue;
+  final String remainingValue;
 
   @override
   Widget build(BuildContext context) {
@@ -1061,7 +1418,7 @@ class _InfoCard extends StatelessWidget {
             child: _InfoColumn(
               icon: Icons.local_fire_department_rounded,
               label: 'Next',
-              value: '$nextLabel (${nextDuration}s)',
+              value: nextValue,
               accent: const Color(0xFFFF8A1E),
             ),
           ),
@@ -1073,8 +1430,8 @@ class _InfoCard extends StatelessWidget {
           Expanded(
             child: _InfoColumn(
               icon: Icons.timer_rounded,
-              label: 'Remaining',
-              value: '$remainingSeconds seconds',
+              label: 'In this set',
+              value: remainingValue,
               accent: const Color(0xFF60A5FA),
             ),
           ),

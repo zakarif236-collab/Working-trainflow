@@ -46,7 +46,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
 
   int get _draftTotalSeconds => _draftExercises.fold<int>(
     0,
-    (sum, exercise) => sum + exercise.workSeconds + exercise.restSeconds,
+    (sum, exercise) => sum + exercise.estimatedDurationSeconds,
   );
 
   @override
@@ -285,6 +285,9 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           .map(
             (exercise) => _WorkoutDraftExercise(
               name: exercise.name,
+              type: exercise.type,
+              sets: exercise.sets,
+              reps: exercise.reps,
               workSeconds: exercise.workSeconds,
               restSeconds: exercise.restSeconds,
               mediaPath: exercise.mediaPath,
@@ -801,6 +804,9 @@ class _WorkoutDraftExercise {
   _WorkoutDraftExercise({
     String? id,
     this.name = 'Exercise',
+    this.type = WorkoutExerciseType.time,
+    this.sets = 1,
+    this.reps = 10,
     this.workSeconds = 40,
     this.restSeconds = 20,
     this.mediaPath = '',
@@ -808,12 +814,32 @@ class _WorkoutDraftExercise {
 
   final String id;
   final String name;
+  final WorkoutExerciseType type;
+  final int sets;
+  final int reps;
   final int workSeconds;
   final int restSeconds;
   final String mediaPath;
 
+  bool get isReps => type == WorkoutExerciseType.reps;
+
+  int get assumedSetSeconds {
+    if (isReps) {
+      return (reps * 3).clamp(10, 600);
+    }
+    return workSeconds;
+  }
+
+  int get estimatedDurationSeconds {
+    final restRounds = sets == 1 ? 1 : (sets - 1).clamp(1, 50);
+    return sets * assumedSetSeconds + restSeconds * restRounds;
+  }
+
   _WorkoutDraftExercise copyWith({
     String? name,
+    WorkoutExerciseType? type,
+    int? sets,
+    int? reps,
     int? workSeconds,
     int? restSeconds,
     String? mediaPath,
@@ -821,6 +847,9 @@ class _WorkoutDraftExercise {
     return _WorkoutDraftExercise(
       id: id,
       name: name ?? this.name,
+      type: type ?? this.type,
+      sets: sets ?? this.sets,
+      reps: reps ?? this.reps,
       workSeconds: workSeconds ?? this.workSeconds,
       restSeconds: restSeconds ?? this.restSeconds,
       mediaPath: mediaPath ?? this.mediaPath,
@@ -830,6 +859,9 @@ class _WorkoutDraftExercise {
   WorkoutBuilderExercise toExercise() {
     return WorkoutBuilderExercise(
       name: name.trim().isEmpty ? 'Exercise' : name.trim(),
+      type: type,
+      sets: sets,
+      reps: reps,
       workSeconds: workSeconds,
       restSeconds: restSeconds,
       mediaPath: mediaPath,
@@ -901,16 +933,37 @@ class _ExerciseEditorCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            _StepperRow(
-              label: 'Work duration (sec)',
-              value: exercise.workSeconds,
-              min: 5,
-              max: 900,
-              step: 5,
-              onChanged: (value) => onChanged(exercise.copyWith(workSeconds: value)),
+            _RepsTimeSelector(
+              value: exercise.type,
+              onChanged: (value) => onChanged(exercise.copyWith(type: value)),
             ),
+            const SizedBox(height: 10),
             _StepperRow(
-              label: 'Rest duration (sec)',
+              label: 'Number of sets',
+              value: exercise.sets,
+              min: 1,
+              max: 50,
+              onChanged: (value) => onChanged(exercise.copyWith(sets: value)),
+            ),
+            if (exercise.isReps)
+              _StepperRow(
+                label: 'Reps per set',
+                value: exercise.reps,
+                min: 1,
+                max: 500,
+                onChanged: (value) => onChanged(exercise.copyWith(reps: value)),
+              )
+            else
+              _StepperRow(
+                label: 'Work duration (sec)',
+                value: exercise.workSeconds,
+                min: 5,
+                max: 900,
+                step: 5,
+                onChanged: (value) => onChanged(exercise.copyWith(workSeconds: value)),
+              ),
+            _StepperRow(
+              label: 'Rest between sets (sec)',
               value: exercise.restSeconds,
               min: 0,
               max: 900,
@@ -965,6 +1018,85 @@ class _ExerciseEditorCard extends StatelessWidget {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RepsTimeSelector extends StatelessWidget {
+  const _RepsTimeSelector({required this.value, required this.onChanged});
+
+  final WorkoutExerciseType value;
+  final ValueChanged<WorkoutExerciseType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _selectorOption(
+            context,
+            label: 'Reps',
+            icon: Icons.fitness_center_rounded,
+            selected: value == WorkoutExerciseType.reps,
+            onTap: () => onChanged(WorkoutExerciseType.reps),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _selectorOption(
+            context,
+            label: 'Time',
+            icon: Icons.timer_outlined,
+            selected: value == WorkoutExerciseType.time,
+            onTap: () => onChanged(WorkoutExerciseType.time),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _selectorOption(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? Theme.of(context).colorScheme.primary : Colors.white24,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? Colors.white : Colors.white60,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : Colors.white60,
+              ),
+            ),
           ],
         ),
       ),
@@ -1034,6 +1166,13 @@ class _SavedRoutineCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onCopyLink;
   final String Function(int seconds) formatDuration;
+
+  static String _exerciseSummary(WorkoutBuilderExercise exercise) {
+    if (exercise.type == WorkoutExerciseType.reps) {
+      return '${exercise.sets} x ${exercise.reps} reps, ${exercise.restSeconds}s rest';
+    }
+    return '${exercise.sets} x ${exercise.workSeconds}s, ${exercise.restSeconds}s rest';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1125,7 +1264,7 @@ class _SavedRoutineCard extends StatelessWidget {
             const SizedBox(height: 8),
             ...routine.exercises.take(3).map(
               (exercise) => Text(
-                '• ${exercise.name} (${exercise.workSeconds}s work, ${exercise.restSeconds}s rest)',
+                '• ${exercise.name} (${_exerciseSummary(exercise)})',
                 style: const TextStyle(color: Colors.white60),
               ),
             ),
