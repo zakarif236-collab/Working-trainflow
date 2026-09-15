@@ -23,6 +23,32 @@ class MusicService {
   final ValueNotifier<bool> playingNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<SongModel?> songNotifier = ValueNotifier<SongModel?>(null);
 
+  /// File extensions that count as playable music from the chosen folder.
+  static const Set<String> allowedAudioExtensions = {'.mp3', '.wav', '.aac'};
+
+  /// Case-insensitive check that [pathOrUri] ends with an allowed extension.
+  /// Public and pure so the folder filter can be unit-tested.
+  static bool isAllowedAudioExtension(String pathOrUri) {
+    final dot = pathOrUri.lastIndexOf('.');
+    if (dot == -1 || dot == pathOrUri.length - 1) {
+      return false;
+    }
+    return allowedAudioExtensions.contains(pathOrUri.substring(dot).toLowerCase());
+  }
+
+  /// Whether [song] qualifies for folder-scoped playback: media access, an
+  /// available uri, and an allowed file extension.
+  static bool isPlayableFromFolder(SongModel song) {
+    final uri = song.uri;
+    if (uri == null || uri.isEmpty) {
+      return false;
+    }
+    if (song.isMusic != true) {
+      return false;
+    }
+    return isAllowedAudioExtension(song.data);
+  }
+
   SongModel? get currentSong => _currentSong;
   AudioPlayer get player => _player;
   double get playbackSpeed => _playbackSpeed;
@@ -64,6 +90,46 @@ class MusicService {
       if (playable.isEmpty) {
         throw const MusicServiceException(
           'No playable songs found on your device yet.',
+        );
+      }
+
+      _playlist = playable;
+      if (_currentSong != null) {
+        _playlistIndex = playable.indexWhere((s) => s.id == _currentSong!.id);
+      }
+
+      return playable;
+    } catch (e) {
+      if (e is MusicServiceException) {
+        rethrow;
+      }
+      throw MusicServiceException(
+        'Unable to read your music library right now: $e',
+      );
+    }
+  }
+
+  /// Load only the music physically located under [folderPath] (including
+  /// sub-folders, via the MediaStore path filter) and filtered to the allowed
+  /// file extensions.
+  Future<List<SongModel>> loadSongsFromFolder(String folderPath) async {
+    if (folderPath.trim().isEmpty) {
+      throw const MusicServiceException('Choose a music folder first.');
+    }
+
+    try {
+      final songs = await _query.querySongs(
+        path: folderPath,
+        sortType: SongSortType.DISPLAY_NAME,
+        orderType: OrderType.ASC_OR_SMALLER,
+        uriType: UriType.EXTERNAL,
+      );
+
+      final playable = songs.where(isPlayableFromFolder).toList();
+
+      if (playable.isEmpty) {
+        throw const MusicServiceException(
+          'No .mp3, .wav, or .aac files found in that folder.',
         );
       }
 
