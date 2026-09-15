@@ -18,9 +18,9 @@ void main() {
     );
 
     expect(find.text('Music Appel'), findsOneWidget);
-    expect(find.text('Change folder'), findsOneWidget);
+    expect(find.text('Change Music Folder'), findsOneWidget);
 
-    await tester.tap(find.text('Change folder'));
+    await tester.tap(find.text('Change Music Folder'));
     expect(changed, isTrue);
   });
 

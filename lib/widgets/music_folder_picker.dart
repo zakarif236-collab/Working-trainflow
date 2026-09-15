@@ -53,7 +53,8 @@ class MusicFolderHeader extends StatelessWidget {
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFFF8A1E),
             ),
-            child: const Text('Change folder', style: TextStyle(fontSize: 13)),
+            child: const Text('Change Music Folder',
+                style: TextStyle(fontSize: 13)),
           ),
         ],
       ),
@@ -103,7 +104,13 @@ Future<void> showMusicSongSheet(
         content: Text(e.message),
         action: SnackBarAction(
           label: 'Choose different folder',
-          onPressed: () => showMusicSongSheet(context, musicService),
+          onPressed: () async {
+            final picked = await pickAndStoreFolder();
+            if (!picked || !context.mounted) {
+              return;
+            }
+            await showMusicSongSheet(context, musicService);
+          },
         ),
       ),
     );
@@ -175,7 +182,13 @@ class _MusicSongSheetState extends State<_MusicSongSheet> {
     } on MusicServiceException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
+          SnackBar(
+            content: Text(e.message),
+            action: SnackBarAction(
+              label: 'Pick again',
+              onPressed: _changeFolder,
+            ),
+          ),
         );
       }
     }
@@ -209,9 +222,15 @@ class _MusicSongSheetState extends State<_MusicSongSheet> {
             const SizedBox(height: 8),
             Text(
               (_folderName == null || _folderName!.trim().isEmpty)
-                  ? 'Pick a local song'
-                  : 'Tracks from $_folderName',
+                  ? 'No folder selected yet.'
+                  : 'Currently showing songs from $_folderName',
+              textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.white60),
+            ),
+            const Text(
+              'Tap Change Music Folder to pick another.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38, fontSize: 12),
             ),
             const SizedBox(height: 12),
             MusicFolderHeader(
