@@ -182,6 +182,9 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
           DateTime.now().difference(backgroundedAt),
         );
       }
+      // Push the reconciled time into the notification before demoting, so the
+      // next promote shows a fresh value instead of a stale one.
+      _pushNotificationState();
       WorkoutForegroundService.instance.demoteToBackground();
     }
   }
@@ -251,16 +254,50 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
     _handleWorkoutCues();
     unawaited(_syncCurrentPhaseMedia());
 
-    if (WorkoutForegroundService.instance.isRunning) {
-      final phase = _controller.currentPhase;
-      WorkoutForegroundService.instance.update(
-        exerciseName: _phaseVoiceCueText(phase),
-        remainingSeconds: _controller.remainingSeconds,
-        currentSet: _controller.phaseIndex + 1,
-        isPaused: !_controller.isRunning,
-        isMusicPlaying: _musicService.player.playing,
-      );
+    _pushNotificationState();
+  }
+
+  /// Derive the ordinal of the current exercise (1-based) by counting work
+  /// phases up to the current one. Returns 0 when the current phase is not an
+  /// exercise (warmup/rest/cooldown), so the notification omits the set label
+  /// instead of showing a misleading phase-based index.
+  int _currentExerciseOrdinal() {
+    final phaseIndex = _controller.phaseIndex;
+    if (phaseIndex == 0) return 0;
+
+    int ordinal = 0;
+    for (int i = 0; i <= phaseIndex && i < _controller.timeline.length; i++) {
+      if (_controller.timeline[i].type == WorkoutPhaseType.work) {
+        ordinal++;
+      }
     }
+    // Only label a set while the current phase is itself a work phase.
+    final isWorkPhase = phaseIndex < _controller.timeline.length &&
+        _controller.timeline[phaseIndex].type == WorkoutPhaseType.work;
+    return isWorkPhase ? ordinal : 0;
+  }
+
+  int get _totalExerciseCount => _controller.timeline
+      .where((p) => p.type == WorkoutPhaseType.work)
+      .length;
+
+  /// Push the current timer state to the persistent notification. The service
+  /// de-dupes on stable content, so calling this on every tick is safe — the
+  /// countdown is rendered by the system chronometer, not by a re-post.
+  void _pushNotificationState() {
+    if (!WorkoutForegroundService.instance.isRunning) return;
+    final phase = _controller.currentPhase;
+    final exerciseCount = _totalExerciseCount;
+    final ordinal = _currentExerciseOrdinal();
+    WorkoutForegroundService.instance.update(
+      exerciseName: _phaseVoiceCueText(phase),
+      remainingSeconds: _controller.remainingSeconds,
+      // 0 disables the "Set x/y" segment for non-work phases.
+      currentSet: ordinal,
+      totalSets: ordinal == 0 ? 0 : exerciseCount,
+      isPaused: !_controller.isRunning,
+      isMusicPlaying: _musicService.player.playing,
+    );
   }
 
   Future<void> _loadExerciseMedia() async {
@@ -1289,8 +1326,8 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
               workoutName: _controller.config.program.name,
               exerciseName: _phaseVoiceCueText(phase),
               remainingSeconds: _controller.remainingSeconds,
-              currentSet: _controller.phaseIndex + 1,
-              totalSets: _controller.timeline.length,
+              currentSet: _currentExerciseOrdinal(),
+              totalSets: _totalExerciseCount,
               isMusicPlaying: _musicService.player.playing,
             );
           } catch (_) {}
@@ -1458,8 +1495,8 @@ class _WorkoutTimerPageState extends State<WorkoutTimerPage>
               workoutName: _controller.config.program.name,
               exerciseName: _phaseVoiceCueText(phase),
               remainingSeconds: _controller.remainingSeconds,
-              currentSet: _controller.phaseIndex + 1,
-              totalSets: _controller.timeline.length,
+              currentSet: _currentExerciseOrdinal(),
+              totalSets: _totalExerciseCount,
               isMusicPlaying: _musicService.player.playing,
             );
           } catch (_) {}

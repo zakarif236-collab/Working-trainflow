@@ -48,6 +48,10 @@ class WorkoutForegroundService {
   bool _isMusicPlaying = false;
   String _lastActionContent = '';
 
+  /// Title shown for the current phase. Kept separately so a workout-name-only
+  /// change (e.g. localization) can be detected without re-posting on ticks.
+  String _lastActionTitle = '';
+
   /// Cancel any stale notification (call on app launch to clean up leftovers)
   static Future<void> cancelStaleNotifications() async {
     final plugin = FlutterLocalNotificationsPlugin();
@@ -125,8 +129,22 @@ class WorkoutForegroundService {
     _service.invoke('setAsForeground');
     if (Platform.isAndroid) {
       _lastActionContent = '';
+      _lastActionTitle = '';
       await _showActionNotification();
     }
+  }
+
+  /// Push the authoritative remaining seconds without forcing a re-post of the
+  /// stable body. Call this after the timer reconciles wall-clock time (e.g. on
+  /// resume) so the notification's chronometer matches the on-screen countdown.
+  void syncTime(int remainingSeconds) {
+    _remainingSeconds = remainingSeconds;
+    if (!_isForegrounded) return;
+    // Re-post so the chronometer's base timestamp is refreshed; the stable body
+    // is unchanged, so this does not alert or duplicate.
+    _lastActionContent = '';
+    _lastActionTitle = '';
+    unawaited(_showActionNotification());
   }
 
   /// Demote to background — hides the notification (call when app returns to foreground).
@@ -177,17 +195,13 @@ class WorkoutForegroundService {
     }
   }
 
+  /// Push the *stable* state to the plugin's own foreground notification (888).
+  /// Intentionally omits the countdown: 888 and the companion (889) must not
+  /// both render a time, or they disagree whenever the isolate is throttled.
   void _updateForegroundNotificationInfo() {
-    final minutes = _remainingSeconds ~/ 60;
-    final seconds = _remainingSeconds % 60;
-    final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
-    final setStr = 'Set $_currentSet/$_totalSets';
-    final stateStr = '$_exerciseName • $setStr • $timeStr'
-        '${_isMusicPlaying ? ' • Music' : ''}'
-        '${_isPaused ? ' • Paused' : ''}';
     _service.invoke('setNotificationInfo', {
       'title': _workoutName,
-      'content': stateStr,
+      'content': _stableActionContent,
     });
   }
 
@@ -201,17 +215,29 @@ class WorkoutForegroundService {
     );
   }
 
+  /// The stable (non-ticking) body line for the companion notification.
+  /// Excludes the countdown so the dedupe key does not change every second —
+  /// the live time is rendered by the system via `usesChronometer`.
+  String get _stableActionContent =>
+      '$_exerciseName${_setSegment()}'
+      '${_isMusicPlaying ? ' • Music' : ''}'
+      '${_isPaused ? ' • Paused' : ''}';
+
+  String _setSegment() {
+    if (_totalSets <= 0 || _currentSet <= 0) return '';
+    return ' • Set $_currentSet/$_totalSets';
+  }
+
   /// Show (or update) the companion interactive notification with action
-  /// buttons. Deduped by content so we don't re-post on every tick.
+  /// buttons. Re-posted only when the *stable* body changes (phase, set, pause,
+  /// music) — never on the 1 Hz countdown, which the system updates in place.
   Future<void> _showActionNotification() async {
-    final minutes = _remainingSeconds ~/ 60;
-    final seconds = _remainingSeconds % 60;
-    final timeStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
-    final content = '$_exerciseName • Set $_currentSet/$_totalSets • $timeStr'
-        '${_isMusicPlaying ? ' • Music' : ''}'
-        '${_isPaused ? ' • Paused' : ''}';
-    if (content == _lastActionContent) return;
+    final content = _stableActionContent;
+    if (content == _lastActionContent && _workoutName == _lastActionTitle) {
+      return;
+    }
     _lastActionContent = content;
+    _lastActionTitle = _workoutName;
 
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -221,6 +247,12 @@ class WorkoutForegroundService {
         importance: Importance.high,
         priority: Priority.high,
         onlyAlertOnce: true,
+        ongoing: true,
+        autoCancel: false,
+        showWhen: false,
+        usesChronometer: _usesChronometer,
+        chronometerCountDown: _usesChronometer,
+        when: _chronometerBaseMillis,
         actions: [
           AndroidNotificationAction(
             _pauseActionId,
@@ -238,6 +270,15 @@ class WorkoutForegroundService {
       payload: 'workout_controls',
     );
   }
+
+  /// A running countdown is only meaningful while the workout is actually
+  /// ticking; pausing freezes it at the current remaining seconds.
+  bool get _usesChronometer => !_isPaused && _remainingSeconds > 0;
+
+  /// The chronometer is a countdown to (now + remaining). Recomputed on every
+  /// post so the shade and the timer cannot drift apart.
+  int get _chronometerBaseMillis =>
+      DateTime.now().millisecondsSinceEpoch + (_remainingSeconds * 1000);
 
   /// Handle taps on the companion notification's action buttons.
   void _onNotificationAction(NotificationResponse response) {

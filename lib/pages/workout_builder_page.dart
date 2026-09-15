@@ -83,10 +83,13 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     });
   }
 
+  /// Build points granted per rewarded ad watched.
+  static const _kBuildPointsPerAd = 4;
+
   void _watchAdForPoint() {
     _showRewardedAd(() async {
       await _settingsService.recordAdWatchForToday();
-      await _settingsService.addBuilderBuilds(1);
+      await _settingsService.addBuilderBuilds(_kBuildPointsPerAd);
       if (!mounted) {
         return;
       }
@@ -340,7 +343,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           return;
         }
         _showRewardedAd(() async {
-          await _settingsService.addBuilderBuilds(1);
+          await _settingsService.addBuilderBuilds(_kBuildPointsPerAd);
           await _settingsService.consumeBuilderBuild(armRegeneration: false);
           if (!mounted) {
             return;
@@ -362,9 +365,9 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
         return AlertDialog(
           backgroundColor: const Color(0xFF101A2B),
           title: const Text('Free build used'),
-          content: const Text(
+          content: Text(
             'You have used your free workout build.\n\n'
-            'Watch a rewarded ad to unlock 1 extra build now '
+            'Watch a rewarded ad to unlock $_kBuildPointsPerAd extra builds now '
             '(up to 5 ad-watches per day), or wait 2 days and '
             'the point will regenerate automatically.',
           ),

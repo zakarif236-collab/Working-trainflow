@@ -432,8 +432,8 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
         workoutName: _routine?.name ?? 'Workout',
         exerciseName: phase.label,
         remainingSeconds: _remainingSeconds,
-        currentSet: _phaseIndex + 1,
-        totalSets: _timeline.length,
+        currentSet: _currentExerciseOrdinal(),
+        totalSets: _totalExerciseCount,
         isMusicPlaying: _musicService.player.playing,
       );
     } catch (_) {}
@@ -450,17 +450,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
         }
       });
 
-      // Update foreground notification
-      if (WorkoutForegroundService.instance.isRunning) {
-        final phase = _timeline[_phaseIndex];
-        WorkoutForegroundService.instance.update(
-          exerciseName: phase.label,
-          remainingSeconds: _remainingSeconds,
-          currentSet: _phaseIndex + 1,
-          isPaused: !_isRunning,
-          isMusicPlaying: _musicService.player.playing,
-        );
-      }
+      _pushNotificationState();
 
       unawaited(_handleWorkoutCues());
       unawaited(_persistResumeSnapshot());
@@ -477,6 +467,41 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     });
     WakelockPlus.disable();
     unawaited(_persistResumeSnapshot());
+  }
+
+  /// Number of work phases in the timeline (the real "total sets").
+  int get _totalExerciseCount =>
+      _timeline.where((p) => p.type == _BuilderPhaseType.work).length;
+
+  /// Ordinal (1-based) of the current exercise, or 0 when the current phase is
+  /// not a work phase — so the notification omits a misleading set label during
+  /// warmup/rest/cooldown.
+  int _currentExerciseOrdinal() {
+    if (_phaseIndex >= _timeline.length) return 0;
+    if (_timeline[_phaseIndex].type != _BuilderPhaseType.work) return 0;
+
+    int ordinal = 0;
+    for (int i = 0; i <= _phaseIndex; i++) {
+      if (_timeline[i].type == _BuilderPhaseType.work) ordinal++;
+    }
+    return ordinal;
+  }
+
+  /// Push timer state to the persistent notification. Safe to call every tick;
+  /// the service de-dupes on stable content and the system renders the
+  /// countdown via its chronometer rather than a per-second re-post.
+  void _pushNotificationState() {
+    if (!WorkoutForegroundService.instance.isRunning) return;
+    if (_phaseIndex >= _timeline.length) return;
+    final ordinal = _currentExerciseOrdinal();
+    WorkoutForegroundService.instance.update(
+      exerciseName: _timeline[_phaseIndex].label,
+      remainingSeconds: _remainingSeconds,
+      currentSet: ordinal,
+      totalSets: ordinal == 0 ? 0 : _totalExerciseCount,
+      isPaused: !_isRunning,
+      isMusicPlaying: _musicService.player.playing,
+    );
   }
 
   void _stopAndReset() {
