@@ -14,9 +14,9 @@ import 'package:my_app/services/sfx_service.dart';
 import 'package:my_app/services/workout_foreground_service.dart';
 import 'package:my_app/services/community_firestore_service.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:on_audio_query/on_audio_query.dart';
 import 'package:my_app/widgets/countdown_bar.dart';
 import 'package:my_app/widgets/music_controls.dart';
+import 'package:my_app/widgets/music_folder_picker.dart';
 import 'package:my_app/widgets/workout_player_widgets.dart';
 import 'package:my_app/widgets/workout_timeline.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -50,7 +50,6 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
     with WidgetsBindingObserver {
   late AudioEngine _audioEngine;
   late MusicService _musicService;
-  List<SongModel> _songs = const [];
   final SettingsService _settingsService = SettingsService();
 
   WorkoutBuilderRoutine? _routine;
@@ -616,113 +615,7 @@ class _WorkoutBuilderPlayerPageState extends State<WorkoutBuilderPlayerPage>
   }
 
   Future<void> _openMusicPicker() async {
-    try {
-      await _musicService.initialize();
-      final songs = await _musicService.loadSongs();
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _songs = songs;
-      });
-
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF111826),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (context) {
-          return SafeArea(
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.65,
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 54,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(99),
-                      color: Colors.white24,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Select Workout Track',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Pick a local song from your library',
-                    style: TextStyle(color: Colors.white60),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _songs.length,
-                      separatorBuilder: (_, index) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final song = _songs[index];
-                        final selected = _musicService.currentSong?.id == song.id;
-                        return ListTile(
-                          leading: Icon(
-                            selected
-                                ? Icons.equalizer_rounded
-                                : Icons.music_note_rounded,
-                            color: selected
-                                ? const Color(0xFF2AB7CA)
-                                : Colors.white70,
-                          ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: Text(
-                            song.artist ?? 'Unknown artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                          onTap: () async {
-                            try {
-                              await _musicService.playSong(song);
-                              if (!context.mounted) {
-                                return;
-                              }
-                              Navigator.pop(context);
-                              setState(() {});
-                            } on MusicServiceException catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(e.message)),
-                              );
-                            }
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } on MusicServiceException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
-      }
-    }
+    await showMusicSongSheet(context, _musicService);
   }
 
   @override
