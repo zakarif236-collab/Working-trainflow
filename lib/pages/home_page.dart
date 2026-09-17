@@ -197,11 +197,22 @@ class _HomePageState extends State<HomePage> {
 
     // Rep-based strength sessions run through the builder player, not the
     // classic countdown timer.
-    if (selectedMode == _TrainingMode.strengthReps) {
+    if (selectedMode == _TrainingMode.strengthReps ||
+        selectedMode == _TrainingMode.legWorkout ||
+        selectedMode == _TrainingMode.backWorkout ||
+        selectedMode == _TrainingMode.bicepsWorkout ||
+        selectedMode == _TrainingMode.tricepsWorkout) {
       if (!context.mounted) return;
+      final routine = switch (selectedMode) {
+        _TrainingMode.legWorkout => quickStartLegWorkout,
+        _TrainingMode.backWorkout => quickStartBackWorkout,
+        _TrainingMode.bicepsWorkout => quickStartBicepsWorkout,
+        _TrainingMode.tricepsWorkout => quickStartTricepsWorkout,
+        _ => quickStartChestWorkout,
+      };
       await Navigator.of(context).pushNamed(
         '/workout-builder-player',
-        arguments: quickStartChestWorkout,
+        arguments: routine,
       );
       if (!mounted) return;
       await _refreshResumeSession();
@@ -264,13 +275,57 @@ class _HomePageState extends State<HomePage> {
           intensity: WorkoutIntensity.medium,
           program: WorkoutProgram.custom,
         );
+      case _TrainingMode.legWorkout:
+        // Not used: rep-based leg sessions launch the builder player directly.
+        return const WorkoutConfig(
+          sets: 4,
+          workSeconds: 40,
+          restSeconds: 40,
+          warmupSeconds: 0,
+          cooldownSeconds: 0,
+          intensity: WorkoutIntensity.medium,
+          program: WorkoutProgram.custom,
+        );
+      case _TrainingMode.backWorkout:
+        // Not used: rep-based back sessions launch the builder player directly.
+        return const WorkoutConfig(
+          sets: 4,
+          workSeconds: 40,
+          restSeconds: 40,
+          warmupSeconds: 0,
+          cooldownSeconds: 0,
+          intensity: WorkoutIntensity.medium,
+          program: WorkoutProgram.custom,
+        );
+      case _TrainingMode.bicepsWorkout:
+        // Not used: rep-based biceps sessions launch the builder player directly.
+        return const WorkoutConfig(
+          sets: 4,
+          workSeconds: 40,
+          restSeconds: 40,
+          warmupSeconds: 0,
+          cooldownSeconds: 0,
+          intensity: WorkoutIntensity.medium,
+          program: WorkoutProgram.custom,
+        );
+      case _TrainingMode.tricepsWorkout:
+        // Not used: rep-based triceps sessions launch the builder player directly.
+        return const WorkoutConfig(
+          sets: 4,
+          workSeconds: 40,
+          restSeconds: 40,
+          warmupSeconds: 0,
+          cooldownSeconds: 0,
+          intensity: WorkoutIntensity.medium,
+          program: WorkoutProgram.custom,
+        );
     }
   }
 
-  /// Sample Chest Day routine launched from the Quick Start "Reps / Strength"
+  /// Sample Chest Day routine launched from the Quick Start "Chest Workout"
   /// tile. Related GIFs are matched by exercise-name keywords in
   /// assets/exercises/images/ (bench_press.gif, incline_dumbbell_press.gif,
-  /// chest_press.gif, cable_fly.gif).
+  /// chest_dips.gif, cable_fly.gif).
   WorkoutBuilderRoutine get quickStartChestWorkout => WorkoutBuilderRoutine(
         id: 'quick-start-chest-strength',
         name: 'Chest Workout',
@@ -293,12 +348,13 @@ class _HomePageState extends State<HomePage> {
             restSeconds: 40,
           ),
           WorkoutBuilderExercise(
-            name: 'Chest Press',
+            name: 'Chest Dips',
             type: WorkoutExerciseType.reps,
             sets: 3,
             reps: 12,
             workSeconds: 40,
             restSeconds: 40,
+            mediaPath: 'assets/exercises/images/chest_dips.gif',
           ),
           WorkoutBuilderExercise(
             name: 'Cable Fly',
@@ -307,6 +363,230 @@ class _HomePageState extends State<HomePage> {
             reps: 15,
             workSeconds: 40,
             restSeconds: 30,
+          ),
+        ],
+      );
+
+  /// Sample Leg Day routine launched from the Quick Start "Leg Workout"
+  /// tile. GIFs are matched by exercise-name keywords in
+  /// assets/exercises/images/.
+  WorkoutBuilderRoutine get quickStartLegWorkout => WorkoutBuilderRoutine(
+        id: 'quick-start-leg-workout',
+        name: 'Leg Workout',
+        createdAt: DateTime.now(),
+        exercises: const [
+          WorkoutBuilderExercise(
+            name: 'Back Squat',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 8,
+            workSeconds: 40,
+            restSeconds: 60,
+            mediaPath: 'assets/exercises/images/back_squat.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Romanian Deadlift',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 60,
+            mediaPath: 'assets/exercises/images/romanian_deadlift.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Leg Press',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 40,
+            mediaPath: 'assets/exercises/images/leg_press.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Leg Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 40,
+            mediaPath: 'assets/exercises/images/leg_curl.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Calf Raises',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 20,
+            workSeconds: 40,
+            restSeconds: 30,
+            mediaPath: 'assets/exercises/images/calf_raises.jpg',
+          ),
+        ],
+      );
+
+  /// Sample Back Day routine launched from the Quick Start "Back Workout"
+  /// tile. GIFs are matched by exercise-name keywords in
+  /// assets/exercises/images/.
+  WorkoutBuilderRoutine get quickStartBackWorkout => WorkoutBuilderRoutine(
+        id: 'quick-start-back-workout',
+        name: 'Back Workout',
+        createdAt: DateTime.now(),
+        exercises: const [
+          WorkoutBuilderExercise(
+            name: 'Lat Pulldown',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 60,
+            mediaPath: 'assets/exercises/images/lat_pulldown.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Barbell Row',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 60,
+            mediaPath: 'assets/exercises/images/barbell_row.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Seated Cable Row',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 40,
+            mediaPath: 'assets/exercises/images/seated_cable_row.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Chest-Supported Row',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 40,
+            mediaPath: 'assets/exercises/images/chest_supported_row.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Face Pulls',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 30,
+            mediaPath: 'assets/exercises/images/face_pulls.gif',
+          ),
+        ],
+      );
+
+  /// Sample Biceps Day routine launched from the Quick Start "Biceps Workout"
+  /// tile. GIFs are matched by exercise-name keywords in
+  /// assets/exercises/images/.
+  WorkoutBuilderRoutine get quickStartBicepsWorkout => WorkoutBuilderRoutine(
+        id: 'quick-start-biceps-workout',
+        name: 'Biceps Workout',
+        createdAt: DateTime.now(),
+        exercises: const [
+          WorkoutBuilderExercise(
+            name: 'Barbell Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/barbell_curl.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Incline Dumbbell Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/incline_dumbbell_curl.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Hammer Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/hammer_curl.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Preacher Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/preacher_curl.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Cable Curl',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/cable_curl.gif',
+          ),
+        ],
+      );
+
+  /// Sample Triceps Day routine launched from the Quick Start
+  /// "Triceps Workout" tile. GIFs are matched by exercise-name keywords in
+  /// assets/exercises/images/.
+  WorkoutBuilderRoutine get quickStartTricepsWorkout => WorkoutBuilderRoutine(
+        id: 'quick-start-triceps-workout',
+        name: 'Triceps Workout',
+        createdAt: DateTime.now(),
+        exercises: const [
+          WorkoutBuilderExercise(
+            name: 'Close-Grip Bench Press',
+            type: WorkoutExerciseType.reps,
+            sets: 4,
+            reps: 10,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/close_grip_bench_press.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Overhead Dumbbell Extension',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/overhead_dumbbell_extension.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Cable Triceps Pushdown',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/cable_triceps_pushdown.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Skull Crushers',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 12,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/skull_crushers.gif',
+          ),
+          WorkoutBuilderExercise(
+            name: 'Rope Pushdown',
+            type: WorkoutExerciseType.reps,
+            sets: 3,
+            reps: 15,
+            workSeconds: 40,
+            restSeconds: 35,
+            mediaPath: 'assets/exercises/images/rope_pushdown.gif',
           ),
         ],
       );
@@ -509,7 +789,16 @@ class _ModCard extends StatelessWidget {
   }
 }
 
-enum _TrainingMode { hiitCardio, tabataCardio, vo2max, strengthReps }
+enum _TrainingMode {
+  hiitCardio,
+  tabataCardio,
+  vo2max,
+  strengthReps,
+  legWorkout,
+  backWorkout,
+  bicepsWorkout,
+  tricepsWorkout,
+}
 
 class _TrainingModeSheet extends StatelessWidget {
   const _TrainingModeSheet({required this.onSelected});
@@ -565,21 +854,33 @@ class _TrainingModeSheet extends StatelessWidget {
             ),
             _TrainingModeTile(
               icon: Icons.fitness_center_rounded,
-              title: 'Reps / Strength',
-              subtitle: 'Chest Workout · 4x12 Bench Press, 3x10 Incline Press, 3x12 Chest Press, 3x15 Cable Fly',
+              title: 'Chest Workout',
+              subtitle: 'Chest Workout · 4x12 Bench Press, 3x10 Incline Press, 3x12 Chest Dips, 3x15 Cable Fly',
               onTap: () => onSelected(_TrainingMode.strengthReps),
             ),
             _TrainingModeTile(
-              icon: Icons.flash_on_rounded,
-              title: 'HIIT Cardio',
-              subtitle: '3 min warm-up, 5x(40s work / 20s rest), 2 min cool-down',
-              onTap: () => onSelected(_TrainingMode.hiitCardio),
+              icon: Icons.directions_run_rounded,
+              title: 'Leg Workout',
+              subtitle: 'Leg Workout · 4x8 Back Squat, 3x10 Romanian Deadlift, 3x12 Leg Press, 3x15 Leg Curl, 4x20 Calf Raises',
+              onTap: () => onSelected(_TrainingMode.legWorkout),
             ),
             _TrainingModeTile(
-              icon: Icons.timer_rounded,
-              title: 'Tabata Cardio (10 min)',
-              subtitle: '2-3 min warm-up, 8x(20s work / 10s rest), 2-3 min cool-down',
-              onTap: () => onSelected(_TrainingMode.tabataCardio),
+              icon: Icons.accessibility_new_rounded,
+              title: 'Back Workout',
+              subtitle: 'Back Workout · 4x10 Lat Pulldown, 3x10 Barbell Row, 3x12 Seated Cable Row, 3x12 Chest-Supported Row, 3x15 Face Pulls',
+              onTap: () => onSelected(_TrainingMode.backWorkout),
+            ),
+            _TrainingModeTile(
+              icon: Icons.sports_gymnastics_rounded,
+              title: 'Biceps Workout',
+              subtitle: 'Biceps Workout · 4x10 Barbell Curl, 3x12 Incline Dumbbell Curl, 3x12 Hammer Curl, 3x12 Preacher Curl, 3x15 Cable Curl · 35s rest',
+              onTap: () => onSelected(_TrainingMode.bicepsWorkout),
+            ),
+            _TrainingModeTile(
+              icon: Icons.sports_martial_arts_rounded,
+              title: 'Triceps Workout',
+              subtitle: 'Triceps Workout · 4x10 Close-Grip Bench Press, 3x12 Overhead Dumbbell Extension, 3x15 Cable Triceps Pushdown, 3x12 Skull Crushers, 3x15 Rope Pushdown · 35s rest',
+              onTap: () => onSelected(_TrainingMode.tricepsWorkout),
             ),
           ],
         ),

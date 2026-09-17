@@ -98,6 +98,8 @@ class _MainShellPageState extends State<MainShellPage> {
     return Scaffold(
       body: IndexedStack(index: _selectedIndex, children: pages),
       bottomNavigationBar: NavigationBar(
+        backgroundColor: const Color(0xFF141B2D),
+        surfaceTintColor: Colors.transparent,
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onTabSelected,
         destinations: [

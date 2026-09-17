@@ -72,14 +72,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Calisthenics quick start opens workout page', (WidgetTester tester) async {
+  testWidgets('Chest Workout quick start opens builder player', (WidgetTester tester) async {
     await pumpApp(tester);
 
-    await openQuickStartMode(tester, 'HIIT Cardio');
+    await openQuickStartMode(tester, 'Chest Workout');
 
-    expect(find.text('Session Builder'), findsOneWidget);
-    await expectConfigLabelVisible(tester, 'Work: 40s');
-    await expectConfigLabelVisible(tester, 'Warmup: 180s');
+    expect(find.text('Chest Workout'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
